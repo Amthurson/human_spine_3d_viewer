@@ -6,12 +6,9 @@ import { processPointCloud } from '../utils/pointCloudUtils'
 import type { Point3D, TransformParams } from '../utils/pointCloudUtils'
 import PointCloud from './PointCloud'
 import SpinePoints from './SpinePoints'
-import VertebraModels from './VertebraModels'
-import HUD from './UI/HUD'
-import OpacityControl from './UI/OpacityControl'
-import OffsetToggle from './UI/OffsetToggle'
+import VertebraModels, { type VertebraModelsRef } from './VertebraModels'
 import MarkersInfo from './UI/MarkersInfo'
-import DebugHelpersToggle from './UI/DebugHelpersToggle'
+import Sidebar from './UI/Sidebar'
 import initWasm, { process_point_cloud } from '../assets/wasm/pointcloud_wasm.js'
 
 interface Marker {
@@ -33,28 +30,6 @@ export default function ThreeScene() {
     mouse: THREE.Vector2
     animationId: number
   } | null>(null)
-
-  // 默认偏移量映射表（在0.7倍scale下记录的偏移量）
-  const defaultMarkerOffsets: Record<string, { x: number; y: number; z: number }> = {
-    C7: { x: 0.008, y: -0.020, z: -0.151 },
-    T1: { x: 0.003, y: -0.001, z: -0.165 },
-    T2: { x: 0.006, y: 0.020, z: -0.177 },
-    T3: { x: 0.005, y: 0.005, z: -0.197 },
-    T4: { x: 0.006, y: 0.010, z: -0.206 },
-    T5: { x: 0.009, y: 0.002, z: -0.223 },
-    T6: { x: -0.006, y: 0.016, z: -0.232 },
-    T7: { x: 0.004, y: 0.030, z: -0.229 },
-    T8: { x: -0.004, y: 0.030, z: -0.234 },
-    T9: { x: 0.009, y: 0.029, z: -0.233 },
-    T10: { x: -0.007, y: 0.035, z: -0.233 },
-    T11: { x: -0.000, y: 0.047, z: -0.224 },
-    T12: { x: 0.008, y: 0.038, z: -0.226 },
-    L1: { x: -0.008, y: 0.012, z: -0.252 },
-    L2: { x: 0.005, y: 0.010, z: -0.245 },
-    L3: { x: 0.001, y: -0.002, z: -0.256 },
-    L4: { x: -0.010, y: 0.028, z: -0.256 },
-    L5: { x: 0.017, y: 0.019, z: -0.241 },
-  }
 
   // 从 localStorage 加载标记位置
   const loadMarkersFromStorage = (): Record<string, Marker> => {
@@ -88,12 +63,12 @@ export default function ThreeScene() {
       if (stored) {
         const parsed = JSON.parse(stored)
         // 合并默认值和存储的值，确保所有脊椎都有偏移量
-        return { ...defaultMarkerOffsets, ...parsed }
+        return { ...parsed }
       }
     } catch (error) {
       console.error('加载偏移量缓存失败:', error)
     }
-    return defaultMarkerOffsets
+    return {}
   }
 
   // 保存偏移量到 localStorage
@@ -142,9 +117,14 @@ export default function ThreeScene() {
   const [applyOffset, setApplyOffset] = useState(true) // 是否应用偏移量
   // const [showBoxHelpers, setShowBoxHelpers] = useState(false) // 是否显示模型边界框
   const [showMarkers, setShowMarkers] = useState(false) // 是否显示标记和连线
+  const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.6) // Y轴允许重合比例，默认20%
+  const [isOptimizing, setIsOptimizing] = useState(false) // 是否正在优化模型缩放
   const showMarkersRef = useRef(false) // 使用 ref 来访问最新的 showMarkers 值，默认 false
   const originalMaterialsRef = useRef<Map<THREE.Mesh, { colors: THREE.Color[]; emissives: THREE.Color[] }>>(new Map())
   const markersGroupRef = useRef<THREE.Group | null>(null)
+  const vertebraModelsRef = useRef<VertebraModelsRef>(null) // VertebraModels组件的ref
+  const modelsRef = useRef<THREE.Group[]>([]) // 保存模型的引用，避免依赖项变化导致重复执行
+  const applyOffsetRef = useRef(applyOffset) // 保存applyOffset的引用
   
   // WASM 相关状态
   const [wasmInitialized, setWasmInitialized] = useState(false)
@@ -157,6 +137,11 @@ export default function ThreeScene() {
   useEffect(() => {
     showMarkersRef.current = showMarkers
   }, [showMarkers])
+
+  // 更新 applyOffset ref
+  useEffect(() => {
+    applyOffsetRef.current = applyOffset
+  }, [applyOffset])
 
   // 初始化 WASM 模块
   useEffect(() => {
@@ -298,10 +283,12 @@ export default function ThreeScene() {
   const [markerOffsets, setMarkerOffsets] = useState<Record<string, { x: number; y: number; z: number }>>(
     loadMarkerOffsetsFromStorage
   )
+  const markerOffsetsRef = useRef(markerOffsets) // 保存markerOffsets的引用
 
   // 当偏移量更新时保存到 localStorage
   useEffect(() => {
     saveMarkerOffsetsToStorage(markerOffsets)
+    markerOffsetsRef.current = markerOffsets // 更新ref
   }, [markerOffsets])
 
   // 初始化场景
@@ -503,6 +490,25 @@ export default function ThreeScene() {
       }
 
       controls.update()
+      
+      // 优化：使用模型到BoxHelper的映射，避免双重遍历和频繁创建对象
+      // 只在模型加载后更新一次映射，然后直接通过映射更新
+      if (modelsRef.current.length > 0) {
+        modelsRef.current.forEach((model) => {
+          if (model.userData && model.userData.boxHelper && model.userData.vertebraName) {
+            const boxHelper = model.userData.boxHelper as THREE.BoxHelper
+            if (boxHelper && boxHelper.visible) {
+              // 更新模型的变换矩阵
+              model.updateMatrixWorld(true)
+              
+              // 使用BoxHelper的update方法，它会自动重新计算边界框
+              // 这比手动创建Box3和Float32Array更高效，避免内存泄漏
+              boxHelper.update()
+            }
+          }
+        })
+      }
+      
       renderer.render(scene, camera)
       labelRenderer.render(scene, camera)
       return animationId
@@ -809,6 +815,16 @@ export default function ThreeScene() {
             )
             // 应用偏移到模型位置
             validTargetModel.position.copy(markerOffsetPoint)
+            
+            // 应用偏移后，重新进行碰撞检测和缩放优化
+            setTimeout(() => {
+              if (vertebraModelsRef.current) {
+                setIsOptimizing(true) // 开始优化
+                vertebraModelsRef.current.optimizeScales(() => {
+                  setIsOptimizing(false) // 优化完成
+                })
+              }
+            }, 100)
           } else {
             // 如果不应用偏移，保持模型在原始spinePoint位置
             validTargetModel.position.copy(validSpinePoint)
@@ -924,143 +940,147 @@ export default function ThreeScene() {
   const handleModelsLoaded = useCallback(
     (loadedModels: THREE.Group[]) => {
       setModels(loadedModels)
+      modelsRef.current = loadedModels // 保存模型引用
       // 保持初始镜头位置，不自动调整相机
-      // 根据开关状态应用或恢复偏移量
-      if (sceneRef.current) {
-        const scene = sceneRef.current.scene
-
+      
+      // 第一步：根据当前的applyOffset状态应用偏移
+      const currentApplyOffset = applyOffsetRef.current
+      const currentMarkerOffsets = markerOffsetsRef.current
+      
+      if (currentApplyOffset) {
+        // 先应用偏移，调整位置
+        console.log('=== 开始应用标记偏移 ===')
         loadedModels.forEach((model) => {
           if (model.userData && model.userData.vertebraName && model.userData.spinePoint) {
             const vertebraName = model.userData.vertebraName
             const spinePoint = model.userData.spinePoint as THREE.Vector3
-
-            if (applyOffset && markerOffsets[vertebraName]) {
-              // 应用偏移量
-              const offset = markerOffsets[vertebraName]
+            
+            if (currentMarkerOffsets[vertebraName]) {
+              const offset = currentMarkerOffsets[vertebraName]
               const markerOffsetPoint = new THREE.Vector3(
                 spinePoint.x + offset.x,
                 spinePoint.y + offset.y,
                 spinePoint.z + offset.z * -1 + z_offset_all // z轴翻转
               )
               model.position.copy(markerOffsetPoint)
-            } else {
-              // 恢复到原始spinePoint位置
-              model.position.copy(spinePoint)
             }
           }
         })
-
-        // 从缓存恢复标记位置（使用当前的 markers 状态）
-        // 注意：这里需要延迟执行，确保 markers 状态已经更新
-        setTimeout(() => {
-          if (sceneRef.current && markersGroupRef.current) {
-            const currentMarkers = loadMarkersFromStorage()
-            console.log('恢复标记，当前缓存中的标记:', currentMarkers)
-            
-            Object.keys(currentMarkers).forEach((vertebraName) => {
-              const marker = currentMarkers[vertebraName]
-              if (marker) {
-                // 查找对应的模型以获取spinePoint
-                let spinePoint: THREE.Vector3 | null = null
-                let targetModel: THREE.Group | null = null
-
-                scene.traverse((obj) => {
-                  if (obj.userData && obj.userData.vertebraName === vertebraName) {
-                    if (obj.userData.spinePoint) {
-                      spinePoint = obj.userData.spinePoint as THREE.Vector3
-                    }
-                    targetModel = obj as THREE.Group
-                  }
-                })
-
-                if (targetModel && spinePoint) {
-                  // 类型断言确保 TypeScript 正确识别类型
-                  const validSpinePoint = spinePoint as THREE.Vector3
-                  const validTargetModel = targetModel as THREE.Group
-                  
-                  // 应用偏移量到模型位置（如果需要）
-                  if (applyOffset && markerOffsets[vertebraName]) {
-                    const offset = markerOffsets[vertebraName]
-                    const markerOffsetPoint = new THREE.Vector3(
-                      validSpinePoint.x + offset.x,
-                      validSpinePoint.y + offset.y,
-                      validSpinePoint.z + offset.z * -1 + z_offset_all
-                    )
-                    validTargetModel.position.copy(markerOffsetPoint)
-                  } else {
-                    validTargetModel.position.copy(validSpinePoint)
-                  }
-
-                  // 创建红色标记点
-                  const markerGeometry = new THREE.SphereGeometry(0.015, 16, 16)
-                  const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
-                  const markerMesh = new THREE.Mesh(markerGeometry, markerMaterial)
-                  markerMesh.position.copy(marker.position)
-                  markerMesh.userData.vertebraName = vertebraName
-                  markerMesh.userData.isMarker = true
-                  markerMesh.visible = showMarkersRef.current // 使用 ref 获取最新值
-                  markersGroupRef.current!.add(markerMesh)
-
-                  // 创建从spinePoint到标记点的连线
-                  const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                    validSpinePoint.clone(),
-                    marker.position.clone(),
-                  ])
-                  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 2 })
-                  const line = new THREE.Line(lineGeometry, lineMaterial)
-                  line.userData.vertebraName = vertebraName
-                  line.userData.isMarkerLine = true
-                  line.visible = showMarkersRef.current // 使用 ref 获取最新值
-                  markersGroupRef.current!.add(line)
-                  
-                  console.log(`恢复标记: ${vertebraName}`, marker.position)
-                }
-              }
-            })
-            
-            // 更新 markers 状态以反映恢复的标记
-            if (Object.keys(currentMarkers).length > 0) {
-              setMarkers(currentMarkers)
-            }
-          }
-        }, 100)
+        console.log('=== 标记偏移应用完成 ===')
       }
+      
+        // 第二步：等待位置调整完成，然后进行碰撞检测和缩放优化
+        // 无论是否应用偏移，都需要进行碰撞检测和缩放优化
+        setTimeout(() => {
+          if (vertebraModelsRef.current) {
+            setIsOptimizing(true) // 开始优化
+            vertebraModelsRef.current.optimizeScales(() => {
+              setIsOptimizing(false) // 优化完成
+            })
+          }
+        }, 200) // 延迟确保位置调整完成
+
+      // 从缓存恢复标记位置（使用当前的 markers 状态）
+      // 注意：这里需要延迟执行，确保 markers 状态已经更新
+      setTimeout(() => {
+        if (sceneRef.current && markersGroupRef.current) {
+          const currentMarkers = loadMarkersFromStorage()
+          console.log('恢复标记，当前缓存中的标记:', currentMarkers)
+          const scene = sceneRef.current.scene
+          
+          Object.keys(currentMarkers).forEach((vertebraName) => {
+            const marker = currentMarkers[vertebraName]
+            if (marker) {
+              // 查找对应的模型以获取spinePoint
+              let spinePoint: THREE.Vector3 | null = null
+              let targetModel: THREE.Group | null = null
+
+              scene.traverse((obj) => {
+                if (obj.userData && obj.userData.vertebraName === vertebraName) {
+                  if (obj.userData.spinePoint) {
+                    spinePoint = obj.userData.spinePoint as THREE.Vector3
+                  }
+                  targetModel = obj as THREE.Group
+                }
+              })
+
+              if (targetModel && spinePoint) {
+                // 类型断言确保 TypeScript 正确识别类型
+                const validSpinePoint = spinePoint as THREE.Vector3
+
+                // 创建红色标记点
+                const markerGeometry = new THREE.SphereGeometry(0.015, 16, 16)
+                const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
+                const markerMesh = new THREE.Mesh(markerGeometry, markerMaterial)
+                markerMesh.position.copy(marker.position)
+                markerMesh.userData.vertebraName = vertebraName
+                markerMesh.userData.isMarker = true
+                markerMesh.visible = showMarkersRef.current // 使用 ref 获取最新值
+                markersGroupRef.current!.add(markerMesh)
+
+                // 创建从spinePoint到标记点的连线
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+                  validSpinePoint.clone(),
+                  marker.position.clone(),
+                ])
+                const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 2 })
+                const line = new THREE.Line(lineGeometry, lineMaterial)
+                line.userData.vertebraName = vertebraName
+                line.userData.isMarkerLine = true
+                line.visible = showMarkersRef.current // 使用 ref 获取最新值
+                markersGroupRef.current!.add(line)
+                
+                console.log(`恢复标记: ${vertebraName}`, marker.position)
+              }
+            }
+          })
+          
+          // 更新 markers 状态以反映恢复的标记
+          if (Object.keys(currentMarkers).length > 0) {
+            setMarkers(currentMarkers)
+          }
+        }
+      }, 100)
     },
-    [applyOffset, markerOffsets]
+    [] // 移除applyOffset和markerOffsets依赖，避免回调重新创建
   )
+
+  // 当开关状态改变时，先清除当前GLB模型，然后重新加载
+  useEffect(() => {
+    // 切换applyOffset时，触发模型重新加载（清除并重新加载）
+    setModelReloadKey(prev => prev + 1)
+  }, [applyOffset])
 
   // 当开关状态改变时，更新所有模型的位置
   useEffect(() => {
-    if (!sceneRef.current) return
-    const scene = sceneRef.current.scene
-    // 遍历所有模型，更新它们的位置
-    scene.traverse((obj) => {
-      if (obj.userData && obj.userData.vertebraName && obj.userData.spinePoint) {
-        const vertebraName = obj.userData.vertebraName
-        const spinePoint = obj.userData.spinePoint as THREE.Vector3
-        const targetModel = obj as THREE.Group
+    if (!sceneRef.current || modelsRef.current.length === 0) return
+    
+    // 只处理已加载的模型，避免重复处理
+    // 注意：当applyOffset改变时，会触发模型重新加载，所以这里不需要处理
+    // 位置更新会在模型加载完成后通过handleModelsLoaded处理
+  }, [applyOffset, markerOffsets, modelReloadKey]) // 添加modelReloadKey依赖，确保模型重新加载后更新位置
 
-        if (applyOffset && markerOffsets[vertebraName]) {
-          // 应用偏移量
-          const offset = markerOffsets[vertebraName]
-          const markerOffsetPoint = new THREE.Vector3(
-            spinePoint.x + offset.x,
-            spinePoint.y + offset.y,
-            spinePoint.z + offset.z * -1 + z_offset_all // z轴翻转
-          )
-          console.log(`开关切换时应用偏移到 ${vertebraName}:`, {
-            spinePoint: { x: spinePoint.x, y: spinePoint.y, z: spinePoint.z },
-            offset: { x: offset.x, y: offset.y, z: offset.z },
-            result: { x: markerOffsetPoint.x, y: markerOffsetPoint.y, z: markerOffsetPoint.z },
-          })
-          targetModel.position.copy(markerOffsetPoint)
-        } else {
-          // 恢复到原始spinePoint位置
-          targetModel.position.copy(spinePoint)
-        }
+  // 当 allowedYOverlapRatio 改变时，使用防抖机制延迟触发碰撞检测和缩放优化
+  useEffect(() => {
+    // 如果模型还没有加载，不执行优化
+    if (!vertebraModelsRef.current || modelsRef.current.length === 0) return
+
+    // 设置防抖定时器，延迟 1 秒后执行优化
+    const debounceTimer = setTimeout(() => {
+      console.log(`Y轴允许重合比例已改变为 ${(allowedYOverlapRatio * 100).toFixed(0)}%，开始碰撞检测和缩放优化...`)
+      if (vertebraModelsRef.current) {
+        setIsOptimizing(true) // 开始优化
+        vertebraModelsRef.current.optimizeScales(() => {
+          setIsOptimizing(false) // 优化完成
+        })
       }
-    })
-  }, [applyOffset, markerOffsets])
+    }, 1000) // 1秒延迟
+
+    // 清理函数：如果 allowedYOverlapRatio 在 1 秒内再次改变，取消之前的定时器
+    return () => {
+      clearTimeout(debounceTimer)
+    }
+  }, [allowedYOverlapRatio])
 
   // 当标记更新时保存到 localStorage
   useEffect(() => {
@@ -1096,145 +1116,27 @@ export default function ThreeScene() {
           e.stopPropagation()
         }}
       />
-      {/* 文件上传 UI */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          zIndex: 1000,
-          background: 'rgba(0, 0, 0, 0.8)',
-          padding: '16px',
-          borderRadius: '8px',
-          color: '#fff',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: '14px',
-          minWidth: '300px',
-        }}
-      >
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            htmlFor="pc-file-input"
-            style={{ display: 'inline-block', width: '140px', marginBottom: '8px' }}
-          >
-            PointCloud.png：
-          </label>
-          <input
-            id="pc-file-input"
-            type="file"
-            accept=".png"
-            onChange={handlePcFileChange}
-            disabled={!wasmInitialized || isProcessing}
-            style={{ color: '#fff' }}
-          />
-        </div>
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            htmlFor="spine-file-input"
-            style={{ display: 'inline-block', width: '140px', marginBottom: '8px' }}
-          >
-            point.json：
-          </label>
-          <input
-            id="spine-file-input"
-            type="file"
-            accept=".json"
-            onChange={handleSpineFileChange}
-            disabled={!wasmInitialized || isProcessing}
-            style={{ color: '#fff' }}
-          />
-        </div>
-        <div style={{ marginBottom: '12px' }}>
-          <button
-            onClick={handleRunProcessing}
-            disabled={!wasmInitialized || isProcessing}
-            style={{
-              padding: '6px 14px',
-              marginRight: '8px',
-              cursor: !wasmInitialized || isProcessing ? 'not-allowed' : 'pointer',
-              opacity: !wasmInitialized || isProcessing ? 0.5 : 1,
-            }}
-          >
-            {isProcessing ? '处理中...' : '点云建模'}
-          </button>
-        </div>
-        {processingError && (
-          <div
-            style={{
-              marginTop: '12px',
-              padding: '8px',
-              background: 'rgba(255, 0, 0, 0.2)',
-              borderRadius: '4px',
-              color: '#ff6b6b',
-              fontSize: '12px',
-            }}
-          >
-            错误: {processingError}
-          </div>
-        )}
-        {!wasmInitialized && (
-          <div
-            style={{
-              marginTop: '12px',
-              padding: '8px',
-              background: 'rgba(255, 255, 0, 0.2)',
-              borderRadius: '4px',
-              color: '#ffd93d',
-              fontSize: '12px',
-            }}
-          >
-            WASM 模块初始化中...
-          </div>
-        )}
-      </div>
-      {/* Min Offset 控制 */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          zIndex: 1000,
-          background: 'rgba(0, 0, 0, 0.8)',
-          padding: '16px',
-          borderRadius: '8px',
-          color: '#fff',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: '14px',
-          minWidth: '250px',
-        }}
-      >
-        <div style={{ marginBottom: '12px' }}>
-          <label
-            htmlFor="min-offset-slider"
-            style={{ display: 'block', marginBottom: '8px' }}
-          >
-            Depth-Brightness Transition: {minOffset.toFixed(2)}
-          </label>
-          <input
-            id="min-offset-slider"
-            type="range"
-            min="-1.5"
-            max="-0.83"
-            step="0.01"
-            value={minOffset}
-            onChange={(e) => setMinOffset(parseFloat(e.target.value))}
-            disabled={humanPoints.length === 0}
-            style={{
-              width: '100%',
-              cursor: humanPoints.length > 0 ? 'pointer' : 'not-allowed',
-              opacity: humanPoints.length > 0 ? 1 : 0.5,
-            }}
-          />
-        </div>
-      </div>
-      <HUD pointCount={humanPoints.length} spinePointCount={spinePoints.length} />
-      <OpacityControl opacity={opacity} onChange={setOpacity} />
-      <OffsetToggle enabled={applyOffset} onChange={setApplyOffset} />
-      <DebugHelpersToggle
-        // showBoxHelpers={showBoxHelpers}
+      {/* 侧边栏 - 整合所有 UI 组件 */}
+      <Sidebar
+        wasmInitialized={wasmInitialized}
+        isProcessing={isProcessing}
+        processingError={processingError}
+        onPcFileChange={handlePcFileChange}
+        onSpineFileChange={handleSpineFileChange}
+        onRunProcessing={handleRunProcessing}
+        humanPoints={humanPoints.length}
+        spinePoints={spinePoints.length}
+        opacity={opacity}
+        onOpacityChange={setOpacity}
+        minOffset={minOffset}
+        onMinOffsetChange={setMinOffset}
+        applyOffset={applyOffset}
+        onApplyOffsetChange={setApplyOffset}
         showMarkers={showMarkers}
-        // onBoxHelpersChange={setShowBoxHelpers}
-        onMarkersChange={setShowMarkers}
+        onShowMarkersChange={setShowMarkers}
+        allowedYOverlapRatio={allowedYOverlapRatio}
+        onAllowedYOverlapRatioChange={setAllowedYOverlapRatio}
+        isOptimizing={isOptimizing}
       />
       {sceneRef.current && (
         <>
@@ -1252,12 +1154,14 @@ export default function ThreeScene() {
           <PointCloud points={humanPoints} opacity={opacity} scene={scene} minOffset={minOffset} />
           <SpinePoints points={spinePoints} transformParams={transformParams} scene={scene} />
           <VertebraModels
+            ref={vertebraModelsRef}
             spinePoints={spinePoints}
             transformParams={transformParams}
             scene={scene}
             onModelsLoaded={handleModelsLoaded}
             markerOffsets={markerOffsets}
             // showBoxHelpers={showBoxHelpers}
+            allowedYOverlapRatio={allowedYOverlapRatio}
             showMarkers={showMarkers}
             reloadKey={modelReloadKey}
           />
