@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 // 导入图片 - 如果图片不存在，请将 PointCloud.png 放在 src/assets 目录下
-import pointCloudImage from '../assets/PointCloud.png'
+// import pointCloudImage from '../assets/PointCloud.png'
 
 interface ImagePointCloudProps {
   scene: THREE.Scene
@@ -18,7 +18,7 @@ export default function ImagePointCloud({ scene, camera, controls }: ImagePointC
   useEffect(() => {
     console.log('ImagePointCloud useEffect 被触发')
     console.log('ImagePointCloud: 开始加载图片...')
-    console.log('图片路径:', pointCloudImage)
+    // console.log('图片路径:', pointCloudImage)
     
     // 创建图片对象
     const img = new Image()
@@ -269,12 +269,12 @@ export default function ImagePointCloud({ scene, camera, controls }: ImagePointC
 
     img.onerror = (error) => {
       console.error('加载图片失败:', error)
-      console.error('尝试加载的图片路径:', pointCloudImage)
+      // console.error('尝试加载的图片路径:', pointCloudImage)
     }
 
     // 加载图片 - 使用 Vite import 的路径
-    console.log('设置图片源:', pointCloudImage)
-    img.src = pointCloudImage
+    // console.log('设置图片源:', pointCloudImage)
+    // img.src = pointCloudImage
 
     // 清理函数
     return () => {
