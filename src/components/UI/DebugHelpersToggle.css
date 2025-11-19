@@ -1,0 +1,32 @@
+#debugHelpersToggle {
+  position: absolute;
+  top: 120px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 5px;
+  color: white;
+  font-size: 14px;
+  z-index: 1000;
+}
+
+#debugHelpersToggle label {
+  display: block;
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#debugHelpersToggle label:last-child {
+  margin-bottom: 0;
+}
+
+#debugHelpersToggle input[type="checkbox"] {
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+#debugHelpersToggle span {
+  cursor: pointer;
+}
+

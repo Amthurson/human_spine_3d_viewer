@@ -1,0 +1,66 @@
+#markersInfo {
+  position: fixed;
+  left: 10px;
+  top: 200px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 11px;
+  z-index: 10;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  max-width: 350px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+#markersInfo h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: bold;
+  color: #ff3333;
+  border-bottom: 1px solid #333;
+  padding-bottom: 4px;
+}
+
+#markersInfo .marker-item {
+  margin: 4px 0;
+  padding: 4px 0;
+  border-bottom: 1px solid #222;
+}
+
+#markersInfo .marker-item:last-child {
+  border-bottom: none;
+}
+
+#markersInfo .marker-item.highlighted {
+  background-color: rgba(51, 170, 255, 0.3);
+  border-left: 3px solid #33aaff;
+  padding-left: 8px;
+}
+
+#markersInfo .marker-name {
+  color: #33aaff;
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+#markersInfo .marker-coords {
+  color: #aaa;
+  font-size: 10px;
+}
+
+#markersInfo .marker-status {
+  color: #ff6666;
+  font-size: 10px;
+}
+
+#markersInfo .marker-offset {
+  color: #ffaa00;
+  font-size: 9px;
+  display: block;
+  margin-left: 20px;
+  margin-top: 2px;
+}
+

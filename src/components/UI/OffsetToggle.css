@@ -1,0 +1,33 @@
+#offsetToggle {
+  position: fixed;
+  right: 10px;
+  top: 100px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 12px;
+  z-index: 10;
+  border-radius: 4px;
+  min-width: 200px;
+}
+
+#offsetToggle label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+#offsetToggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  cursor: pointer;
+  accent-color: #33aaff;
+}
+
+#offsetToggle span {
+  font-weight: bold;
+  color: #fff;
+}
+
