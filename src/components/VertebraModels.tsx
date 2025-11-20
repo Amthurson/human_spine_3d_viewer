@@ -138,6 +138,8 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     loadingRef.current = true
     const loader = createGLTFLoader()
     const vertebraGroup = new THREE.Group()
+    // 添加一个标识
+    vertebraGroup.userData.isVertebraGroup = true
     vertebraGroupRef.current = vertebraGroup
     const models: THREE.Group[] = []
     let loadedCount = 0
@@ -296,7 +298,13 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
           loadedCount++
 
           // console.log(`加载脊椎模型 ${modelName} (${loadedCount}/${totalCount})`)
-
+          // 检查当前scene中是否有vertebraGroup
+          // const hasVertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
+          // if (hasVertebraGroup) {
+          //   console.log('vertebraGroup已存在')
+          //   scene.remove(hasVertebraGroup)
+          //   // return
+          // }
           if (loadedCount === totalCount) {
             scene.add(vertebraGroup)
             
@@ -337,26 +345,30 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       })
       
       // 遍历场景，收集所有需要清理的对象
-      scene.traverse((child) => {
-        if (child.userData && child.userData.vertebraName) {
-          const vertebraName = child.userData.vertebraName
-          // 如果是旧模型相关的对象，标记为需要清理
-          if (vertebraNamesToClean.has(vertebraName)) {
-            // BoxHelper
-            if (child.userData.isBoxHelper && child instanceof THREE.BoxHelper) {
-              objectsToRemove.push(child)
-            }
-            // 标记偏移点
-            if (child.userData.isMarkerOffsetHelper && child instanceof THREE.Mesh) {
-              objectsToRemove.push(child)
-            }
-            // 标记偏移连线
-            if (child.userData.isMarkerOffsetLine && child instanceof THREE.Line) {
-              objectsToRemove.push(child)
-            }
-          }
-        }
-      })
+      const historyVertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
+      if (historyVertebraGroup) {
+        objectsToRemove.push(historyVertebraGroup)
+      }
+      // scene.traverse((child) => {
+      //   if (child.userData && child.userData.vertebraName) {
+      //     const vertebraName = child.userData.vertebraName
+      //     // 如果是旧模型相关的对象，标记为需要清理
+      //     if (vertebraNamesToClean.has(vertebraName)) {
+      //       // BoxHelper
+      //       if (child.userData.isBoxHelper && child instanceof THREE.BoxHelper) {
+      //         objectsToRemove.push(child)
+      //       }
+      //       // 标记偏移点
+      //       if (child.userData.isMarkerOffsetHelper && child instanceof THREE.Mesh) {
+      //         objectsToRemove.push(child)
+      //       }
+      //       // 标记偏移连线
+      //       if (child.userData.isMarkerOffsetLine && child instanceof THREE.Line) {
+      //         objectsToRemove.push(child)
+      //       }
+      //     }
+      //   }
+      // })
       
       console.log('找到需要清理的对象数量:', objectsToRemove.length)
       

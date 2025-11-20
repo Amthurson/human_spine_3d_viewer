@@ -52,6 +52,7 @@ export default function Sidebar({
   isOptimizing,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [allowedYOverlapRatioValue, setAllowedYOverlapRatioValue] = useState(allowedYOverlapRatio)
 
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
@@ -195,16 +196,17 @@ export default function Sidebar({
             <h3 className="section-title">碰撞检测</h3>
             <div className="form-group">
               <label htmlFor="overlap-ratio-slider">
-                Y轴允许重合比例: {(allowedYOverlapRatio * 100).toFixed(0)}%
+                Y轴允许重合比例: {(allowedYOverlapRatioValue * 100).toFixed(0)}%
               </label>
               <input
                 id="overlap-ratio-slider"
                 type="range"
                 min="0"
                 max="100"
-                value={allowedYOverlapRatio * 100}
+                value={allowedYOverlapRatioValue * 100}
                 step="1"
-                onChange={(e) => onAllowedYOverlapRatioChange(parseInt(e.target.value) / 100)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAllowedYOverlapRatioValue(parseInt((e.currentTarget as HTMLInputElement).value) / 100)}
+                onMouseUp={(e: React.MouseEvent<HTMLInputElement>) => onAllowedYOverlapRatioChange(parseInt((e.currentTarget as HTMLInputElement).value) / 100)}
                 disabled={isOptimizing}
               />
               <div className="slider-hint">

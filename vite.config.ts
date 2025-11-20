@@ -19,6 +19,8 @@ export default defineConfig({
     include: ['react', 'react-dom'],
   },
   server: {
+    host: '0.0.0.0',
+    allowedHosts: ['127.0.0.1', 'localhost','59494ug0vv21.vicp.fun'],
     fs: {
       allow: ['..'],
     },

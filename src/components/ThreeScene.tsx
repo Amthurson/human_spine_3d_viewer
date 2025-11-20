@@ -10,6 +10,7 @@ import VertebraModels, { type VertebraModelsRef } from './VertebraModels'
 import MarkersInfo from './UI/MarkersInfo'
 import Sidebar from './UI/Sidebar'
 import initWasm, { process_point_cloud } from '../assets/wasm/pointcloud_wasm.js'
+// import CameraInfo from './UI/CameraInfo.js'
 
 interface Marker {
   position: THREE.Vector3
@@ -17,6 +18,7 @@ interface Marker {
 }
 
 const z_offset_all = 0.05;
+const DEFAULT_MARKER_OFFSETS = {"C7":{"x":-0.010264620037538114,"y":-0.019544764034616247,"z":-0.2037936070787124},"T1":{"x":0.0011804996919972388,"y":0.023489402224895706,"z":-0.20319266294499005},"T2":{"x":-0.0020365719138432103,"y":0.0013876434856507913,"z":-0.22469596655004487},"T3":{"x":-0.011810103825779683,"y":-0.009702797368014604,"z":-0.2541427436016169},"T4":{"x":0.0026411327402862395,"y":-0.01297140388768847,"z":-0.2705150312979196},"T5":{"x":0.014765051694224207,"y":-0.022182006503121965,"z":-0.27284428328621935},"T6":{"x":0.007520902595686496,"y":-0.022881017167690754,"z":-0.2756774647119048},"T7":{"x":-0.002319604361232741,"y":-0.04596832291045372,"z":-0.2799130857730781},"T8":{"x":-0.0035561872032147945,"y":-0.06278863634255982,"z":-0.29580365125268326},"T9":{"x":-0.012740966990954866,"y":-0.07569547738919402,"z":-0.28893505909321027},"T10":{"x":0.024146368867932755,"y":-0.08570083283867058,"z":-0.2686049359897124},"T11":{"x":0.028703560403192274,"y":-0.07966029456662782,"z":-0.2643830202215228},"T12":{"x":0.0067152774264817305,"y":-0.06782428902895754,"z":-0.2487016754664949},"L1":{"x":0.009483429275908672,"y":-0.043378890396415626,"z":-0.24399114508554343},"L2":{"x":0.03343240652335859,"y":-0.06575674755856187,"z":-0.26334396972732904},"L3":{"x":0.031740837597671503,"y":-0.0366996224967735,"z":-0.2632297270167586},"L4":{"x":0.008936464705699143,"y":-0.07909721479281728,"z":-0.24567020234020387},"L5":{"x":-0.03218119462482108,"y":-0.09075889149455435,"z":-0.229307243389278}}
 
 export default function ThreeScene() {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -64,6 +66,9 @@ export default function ThreeScene() {
         const parsed = JSON.parse(stored)
         // 合并默认值和存储的值，确保所有脊椎都有偏移量
         return { ...parsed }
+      } else {
+        localStorage.setItem('markerOffsets', JSON.stringify(DEFAULT_MARKER_OFFSETS))
+        return DEFAULT_MARKER_OFFSETS
       }
     } catch (error) {
       console.error('加载偏移量缓存失败:', error)
@@ -108,7 +113,7 @@ export default function ThreeScene() {
   const [spinePoints, setSpinePoints] = useState<Point3D[]>([])
   const [transformParams, setTransformParams] = useState<TransformParams | null>(null)
   const [opacity, setOpacity] = useState(0.5)
-  const [minOffset, setMinOffset] = useState(-1.5)
+  const [minOffset, setMinOffset] = useState(-0.91)
   const [models, setModels] = useState<THREE.Group[]>([])
   const [markers, setMarkers] = useState<Record<string, Marker>>(loadMarkersFromStorage)
   const [highlightedVertebra, setHighlightedVertebra] = useState<string | null>(null)
@@ -314,11 +319,13 @@ export default function ThreeScene() {
       0.01,
       100
     )
-    camera.position.set(1.12, 1.88, -5.61)
+    // 设置初始相机位置
+    camera.position.set(0.61, 2.86, -7.40)
+    // 设置初始相机旋转（角度转弧度）
     camera.rotation.set(
-      (177.79 * Math.PI) / 180,
-      (9.23 * Math.PI) / 180,
-      (-179.64 * Math.PI) / 180
+      (-171.27 * Math.PI) / 180,
+      (-0.19 * Math.PI) / 180,
+      (-179.97 * Math.PI) / 180
     )
 
     // 创建渲染器
@@ -364,7 +371,8 @@ export default function ThreeScene() {
     const controls = new OrbitControls(camera, canvas)
     controls.enableDamping = true
     controls.dampingFactor = 0.05
-    controls.target.set(0.15, 2.11, 0.33)
+    // 设置初始控制器目标位置
+    controls.target.set(0.64, 1.68, 0.29)
     controls.update()
 
     // 射线检测器
