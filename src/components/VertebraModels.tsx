@@ -461,6 +461,65 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               applyScaleToModels(modelsToOptimize, bestScale)
             }
 
+            // 优化：确保所有模型之间的缩放比例差异不超过1%
+            const currentScales: Array<{ model: THREE.Group; scale: number }> = []
+            modelsToOptimize.forEach((model) => {
+              // 获取当前缩放值（绝对值，因为z轴是负的）
+              const currentScale = Math.abs(model.scale.x)
+              currentScales.push({ model, scale: currentScale })
+            })
+
+            if (currentScales.length > 0) {
+              const scales = currentScales.map(item => item.scale)
+              const minScale = Math.min(...scales)
+              const maxScale = Math.max(...scales)
+              const scaleRatio = maxScale / minScale
+
+              // 如果最大最小比例超过1%（即比例 > 1.01），则统一调整
+              if (scaleRatio > 1.01) {
+                // 计算目标范围：以最小值为基准，最大值不超过最小值的1.01倍
+                const targetMaxScale = minScale * 1.01
+                
+                // 将所有超出范围的模型调整到目标范围内
+                currentScales.forEach(({ model, scale }) => {
+                  if (scale > targetMaxScale) {
+                    // 将超出范围的模型缩小到目标最大值
+                    model.scale.set(targetMaxScale, targetMaxScale, -targetMaxScale)
+                  }
+                })
+
+                // 重新检查碰撞，如果调整后仍有碰撞，则进一步缩小所有模型
+                if (hasAnyCollision(modelsToOptimize)) {
+                  // 进一步缩小所有模型，确保无碰撞
+                  const safetyScale = 0.99
+                  modelsToOptimize.forEach((model) => {
+                    const currentScale = Math.abs(model.scale.x)
+                    const newScale = currentScale * safetyScale
+                    model.scale.set(newScale, newScale, -newScale)
+                  })
+                  
+                  // 再次检查并限制比例
+                  let finalMinScale = Infinity
+                  let finalMaxScale = 0
+                  modelsToOptimize.forEach((model) => {
+                    const scale = Math.abs(model.scale.x)
+                    finalMinScale = Math.min(finalMinScale, scale)
+                    finalMaxScale = Math.max(finalMaxScale, scale)
+                  })
+                  
+                  if (finalMaxScale / finalMinScale > 1.01) {
+                    const finalTargetMax = finalMinScale * 1.01
+                    modelsToOptimize.forEach((model) => {
+                      const scale = Math.abs(model.scale.x)
+                      if (scale > finalTargetMax) {
+                        model.scale.set(finalTargetMax, finalTargetMax, -finalTargetMax)
+                      }
+                    })
+                  }
+                }
+              }
+            }
+
             // 标记为已优化，但保持当前位置（偏移后的位置）
             modelsToOptimize.forEach((model) => {
               model.userData.collisionOptimized = true

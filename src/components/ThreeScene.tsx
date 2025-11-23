@@ -182,7 +182,7 @@ export default function ThreeScene() {
   const [applyOffset, setApplyOffset] = useState(true) // 是否应用偏移量
   // const [showBoxHelpers, setShowBoxHelpers] = useState(false) // 是否显示模型边界框
   const [showMarkers, setShowMarkers] = useState(false) // 是否显示标记和连线
-  const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.6) // Y轴允许重合比例，默认20%
+  const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.69) // Y轴允许重合比例，默认20%
   const [isOptimizing, setIsOptimizing] = useState(false) // 是否正在优化模型缩放
   const [colorImageUrl, setColorImageUrl] = useState<string | null>(null) // Color.png 图片 URL
   const [rawSpinePoints2D, setRawSpinePoints2D] = useState<Array<{ x: number; y: number }>>([]) // 原始的 point.json 2D 坐标
