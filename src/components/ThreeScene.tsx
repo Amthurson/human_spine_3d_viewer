@@ -11,6 +11,7 @@ import VertebraModels, { type VertebraModelsRef } from './VertebraModels'
 import MarkersInfo from './UI/MarkersInfo'
 import Sidebar from './UI/Sidebar'
 import ColorImagePreview from './UI/ColorImagePreview'
+import OperationHint from './UI/OperationHint'
 import initWasm, { process_point_cloud } from '../assets/wasm/rgb_pointcloud_wasm.js'
 // import CameraInfo from './UI/CameraInfo.js'
 // import CameraInfo from './UI/CameraInfo.js'
@@ -184,6 +185,7 @@ export default function ThreeScene() {
   const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.6) // Y轴允许重合比例，默认20%
   const [isOptimizing, setIsOptimizing] = useState(false) // 是否正在优化模型缩放
   const [colorImageUrl, setColorImageUrl] = useState<string | null>(null) // Color.png 图片 URL
+  const [rawSpinePoints2D, setRawSpinePoints2D] = useState<Array<{ x: number; y: number }>>([]) // 原始的 point.json 2D 坐标
   const showMarkersRef = useRef(false) // 使用 ref 来访问最新的 showMarkers 值，默认 false
   const originalMaterialsRef = useRef<Map<THREE.Mesh, { colors: THREE.Color[]; emissives: THREE.Color[] }>>(new Map())
   const markersGroupRef = useRef<THREE.Group | null>(null)
@@ -208,8 +210,8 @@ export default function ThreeScene() {
   const [skinOpacity, setSkinOpacity] = useState(1)
   const [showPointCloud, setShowPointCloud] = useState(true)
   const [showSkin, setShowSkin] = useState(false)
-  const [pointSize, setPointSize] = useState(0.01)
-  const [showOriginalColor, setShowOriginalColor] = useState(false)
+  const [pointSize, setPointSize] = useState(0.038)
+  const [showOriginalColor, setShowOriginalColor] = useState(true)
   // 更新 ref 以保持最新值
   useEffect(() => {
     showMarkersRef.current = showMarkers
@@ -261,6 +263,27 @@ export default function ThreeScene() {
 
       // 统一 point.json 格式，兼容两种格式：[{x,y}] 和 [[x,y]]
       spineText = normalizePointJson(spineText)
+      
+      // 解析并保存原始的 2D 坐标点（用于图片预览）
+      try {
+        const rawSpineData = JSON.parse(spineText)
+        const rawPoints2D: Array<{ x: number; y: number }> = rawSpineData.map((p: { x?: number; y?: number } | number[]) => {
+          if (Array.isArray(p)) {
+            return {
+              x: p[0] ?? 0,
+              y: p[1] ?? 0,
+            }
+          }
+          return {
+            x: p.x ?? 0,
+            y: p.y ?? 0,
+          }
+        })
+        setRawSpinePoints2D(rawPoints2D)
+      } catch (error) {
+        console.error('解析原始 point.json 失败:', error)
+        setRawSpinePoints2D([])
+      }
 
       // 调用 WASM
       let result = process_point_cloud(pcBytes, spineText, colorBytes)
@@ -338,6 +361,7 @@ export default function ThreeScene() {
     } catch (error) {
       console.error('处理文件时出错:', error)
       setProcessingError(`处理失败: ${error}`)
+      setRawSpinePoints2D([]) // 清除原始数据
     } finally {
       setIsProcessing(false)
     }
@@ -1486,7 +1510,9 @@ export default function ThreeScene() {
         onShowOriginalColorChange={setShowOriginalColor}
       />
       {/* Color.png 预览窗口 */}
-      <ColorImagePreview imageUrl={colorImageUrl} />
+      <ColorImagePreview imageUrl={colorImageUrl} spinePoints2D={rawSpinePoints2D} />
+      {/* 操作提示 */}
+      <OperationHint />
       {sceneRef.current && (
         <>
           {/* <CameraInfo camera={sceneRef.current.camera} controls={sceneRef.current.controls} /> */}

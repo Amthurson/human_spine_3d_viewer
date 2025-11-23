@@ -137,3 +137,34 @@
   max-height: 100%;
 }
 
+/* 脊柱点标记样式 */
+.spine-point-marker {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.spine-point-dot {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #ff0000;
+  /* box-shadow: 0 0 1px rgba(255, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.5); */
+  position: relative;
+}
+
+.spine-point-label {
+  position: absolute;
+  top: 0;
+  left: 150%;
+  /* transform: translateX(-50%); */
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 0 1px;
+  /* border-radius: 3px; */
+  font-size: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+

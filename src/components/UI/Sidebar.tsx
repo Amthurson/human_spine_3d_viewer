@@ -146,7 +146,7 @@ export default function Sidebar({
                 disabled={!wasmInitialized || isProcessing || isOptimizing}
                 className="primary-button"
               >
-                {isProcessing ? '处理中...' : '点云建模'}
+                {isProcessing ? '处理中...' : '人体脊柱建模'}
               </button>
             </div>
             {processingError && (
