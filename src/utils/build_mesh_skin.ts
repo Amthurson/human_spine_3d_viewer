@@ -149,21 +149,6 @@ export const buildHumanPatchMeshFromHeightMap = ({
             const cy = yRaw - yCenter;
             const col = sampleColorFromGrid(cx, cy, colorMapR, colorMapG, colorMapB, nx, ny, widthX, heightY, xMin, yMin, xCenter, yCenter);
             
-            // 调试：检查前几个顶点的颜色
-            if (positions.length / 3 < 5) {
-                console.log('采样颜色:', { 
-                    cx, cy, 
-                    col, 
-                    colR: col?.r,
-                    colG: col?.g,
-                    colB: col?.b,
-                    colType: typeof col,
-                    colKeys: Object.keys(col || {}),
-                    u: (cx - (xMin - xCenter)) / widthX, 
-                    v: (cy - (yMin - yCenter)) / heightY 
-                });
-            }
-            
             // 确保颜色值有效（避免变量名冲突，使用不同的变量名）
             const colorR = (col && typeof col.r === 'number' && !Number.isNaN(col.r)) ? col.r : 1;
             const colorG = (col && typeof col.g === 'number' && !Number.isNaN(col.g)) ? col.g : 1;
