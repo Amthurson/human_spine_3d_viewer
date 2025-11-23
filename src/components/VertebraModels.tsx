@@ -8,7 +8,7 @@ import { VERTEBRA_NAMES } from '../constants/vertebraNames'
 interface VertebraModelsProps {
   spinePoints: Point3D[]
   transformParams: TransformParams
-  scene: THREE.Scene
+  scene: THREE.Object3D
   onModelsLoaded?: (models: THREE.Group[]) => void
   markerOffsets?: Record<string, { x: number; y: number; z: number }>
   showBoxHelpers?: boolean
@@ -64,6 +64,11 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
         // 清理所有模型相关的对象
         const objectsToRemove: THREE.Object3D[] = []
         const vertebraNamesToClean = new Set<string>()
+
+        const vertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
+        if (vertebraGroup) {
+          scene.remove(vertebraGroup)
+        }
         
         oldModels.forEach((model) => {
           if (model.userData && model.userData.vertebraName) {
@@ -152,6 +157,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     transformedPoints.forEach((point, index) => {
       const modelName = VERTEBRA_NAMES[index]
       const modelPath = `/models/${modelName}.glb`
+      loadingRef.current = true
 
       loadModel(loader, modelPath, {
         position: [point.x, point.y, point.z],

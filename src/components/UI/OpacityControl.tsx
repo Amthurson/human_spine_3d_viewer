@@ -18,7 +18,7 @@ export default function OpacityControl({ opacity, onChange }: OpacityControlProp
   return (
     <div id="opacityControl">
       <label>
-        人体透明度: <span id="opacityValue">{value}%</span>
+        透明度: <span id="opacityValue">{value}%</span>
       </label>
       <input
         type="range"

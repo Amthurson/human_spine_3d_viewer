@@ -6,7 +6,7 @@ import type { TransformParams, Point3D } from '../utils/pointCloudUtils'
 interface SpinePointsProps {
   points: Point3D[]
   transformParams: TransformParams
-  scene: THREE.Scene
+  scene: THREE.Object3D
 }
 
 export default function SpinePoints({ points, transformParams, scene }: SpinePointsProps) {

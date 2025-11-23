@@ -1,0 +1,111 @@
+.color-image-preview {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 300px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  background: rgba(30, 30, 30, 0.95);
+  border: 2px solid #555;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  cursor: move;
+  user-select: none;
+  overflow: hidden;
+}
+
+.color-image-preview:active {
+  cursor: grabbing;
+}
+
+.color-image-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(40, 40, 40, 0.9);
+  border-bottom: 1px solid #555;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.color-image-header span {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.color-image-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-image-btn {
+  background: rgba(60, 60, 60, 0.8);
+  border: 1px solid #777;
+  color: #fff;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.2s;
+  padding: 0;
+}
+
+.color-image-btn:hover {
+  background: rgba(80, 80, 80, 0.9);
+}
+
+.color-image-btn:active {
+  background: rgba(100, 100, 100, 0.9);
+}
+
+.color-image-scale {
+  color: #ccc;
+  font-size: 12px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.color-image-content {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  background: #1a1a1a;
+  cursor: default;
+}
+
+.color-image-content img {
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 滚动条样式 */
+.color-image-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.color-image-content::-webkit-scrollbar-track {
+  background: rgba(40, 40, 40, 0.5);
+}
+
+.color-image-content::-webkit-scrollbar-thumb {
+  background: rgba(100, 100, 100, 0.5);
+  border-radius: 4px;
+}
+
+.color-image-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 120, 0.7);
+}
+

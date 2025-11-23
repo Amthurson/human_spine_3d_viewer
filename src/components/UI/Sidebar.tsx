@@ -8,13 +8,16 @@ interface SidebarProps {
   processingError: string | null
   onPcFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onSpineFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onColorFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onRunProcessing: () => void
   
   // 点云相关
   humanPoints: number
   spinePoints: number
   opacity: number
+  skinOpacity: number
   onOpacityChange: (opacity: number) => void
+  onSkinOpacityChange: (skinOpacity: number) => void
   minOffset: number
   onMinOffsetChange: (minOffset: number) => void
   
@@ -28,6 +31,18 @@ interface SidebarProps {
   allowedYOverlapRatio: number
   onAllowedYOverlapRatioChange: (ratio: number) => void
   isOptimizing: boolean // 是否正在优化模型缩放
+  
+  // 点云类型相关
+  pointType: 'sphere' | 'box'
+  onPointTypeChange: (type: 'sphere' | 'box') => void
+  showPointCloud: boolean
+  onShowPointCloudChange: (show: boolean) => void
+  showSkin: boolean
+  onShowSkinChange: (show: boolean) => void
+  pointSize: number
+  onPointSizeChange: (size: number) => void
+  showOriginalColor: boolean
+  onShowOriginalColorChange: (show: boolean) => void
 }
 
 export default function Sidebar({
@@ -36,13 +51,16 @@ export default function Sidebar({
   processingError,
   onPcFileChange,
   onSpineFileChange,
+  onColorFileChange,
   onRunProcessing,
   humanPoints,
   spinePoints,
   opacity,
+  skinOpacity,
   onOpacityChange,
-  minOffset,
-  onMinOffsetChange,
+  onSkinOpacityChange,
+  // minOffset,
+  // onMinOffsetChange,
   applyOffset,
   onApplyOffsetChange,
   showMarkers,
@@ -50,9 +68,22 @@ export default function Sidebar({
   allowedYOverlapRatio,
   onAllowedYOverlapRatioChange,
   isOptimizing,
+  showPointCloud,
+  onShowPointCloudChange,
+  showSkin,
+  onShowSkinChange,
+  pointSize,
+  onPointSizeChange,
+  showOriginalColor,
+  onShowOriginalColorChange,
+  // pointType,
+  // onPointTypeChange,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [allowedYOverlapRatioValue, setAllowedYOverlapRatioValue] = useState(allowedYOverlapRatio)
+  // const handlePointTypeChange = (type: 'sphere' | 'box') => () => {
+  //   onPointTypeChange(type)
+  // }
 
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
@@ -100,6 +131,16 @@ export default function Sidebar({
               />
             </div>
             <div className="form-group">
+              <label htmlFor="color-file-input">Color.png：</label>
+              <input
+                id="color-file-input"
+                type="file"
+                accept=".png"
+                onChange={onColorFileChange}
+                disabled={isProcessing || isOptimizing}
+              />
+            </div>
+            <div className="form-group">
               <button
                 onClick={onRunProcessing}
                 disabled={!wasmInitialized || isProcessing || isOptimizing}
@@ -133,8 +174,32 @@ export default function Sidebar({
           <section className="sidebar-section">
             <h3 className="section-title">点云控制</h3>
             <div className="form-group">
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showPointCloud}
+                    onChange={(e) => onShowPointCloudChange(e.target.checked)}
+                    disabled={isOptimizing}
+                  />
+                  <span>显示点云</span>
+                </label>
+              </div>
+              <label htmlFor="point-size-slider">
+                点云大小: {pointSize}
+              </label>
+              <input
+                id="point-size-slider"
+                type="range"
+                min="0.001"
+                max="0.1"
+                value={pointSize}
+                step="0.001"
+                onChange={(e) => onPointSizeChange(parseFloat(e.target.value))}
+                disabled={isOptimizing}
+              />
               <label htmlFor="opacity-slider">
-                人体透明度: {Math.round(opacity * 100)}%
+                点云透明度: {Math.round(opacity * 100)}%
               </label>
               <input
                 id="opacity-slider"
@@ -146,8 +211,56 @@ export default function Sidebar({
                 onChange={(e) => onOpacityChange(parseInt(e.target.value) / 100)}
                 disabled={humanPoints === 0 || isOptimizing}
               />
+              <div className="form-group checkbox-group">
+                <label htmlFor="point-color-checkbox"> 点云颜色：</label>
+                <label>
+                  <input
+                    type="radio"
+                    checked={showOriginalColor}
+                    onChange={() => onShowOriginalColorChange(true)}
+                    disabled={isOptimizing}
+                  />
+                  <span>原始颜色</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    checked={!showOriginalColor}
+                    onChange={() => onShowOriginalColorChange(false)}
+                    disabled={isOptimizing}
+                  />
+                  <span>灰色</span>
+                </label>
+              </div>
             </div>
-            <div className="form-group">
+            {/* <div className="form-group">
+              <label htmlFor="point-type-radio">
+                点云类型
+              </label>
+              <div className="form-group radio-group">
+                <label>
+                  <input
+                    type="radio"
+                    checked={pointType === 'sphere'}
+                    onChange={handlePointTypeChange('sphere')}
+                    id="smooth-checkbox"
+                    disabled={humanPoints === 0 || isOptimizing}
+                  />
+                  <span>立体</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    checked={pointType === 'box'}
+                    onChange={handlePointTypeChange('box')}
+                    id="box-checkbox"
+                    disabled={humanPoints === 0 || isOptimizing}
+                  />
+                  <span>平面</span>
+                </label>
+              </div>
+            </div> */}
+            {/* <div className="form-group">
               <label htmlFor="min-offset-slider">
                 Depth-Brightness Transition: {minOffset.toFixed(2)}
               </label>
@@ -159,6 +272,37 @@ export default function Sidebar({
                 step="0.01"
                 value={minOffset}
                 onChange={(e) => onMinOffsetChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+            </div> */}
+          </section>
+
+          {/* 皮肤控制区域 */}
+          <section className="sidebar-section">
+            <h3 className="section-title">皮肤控制</h3>
+            <div className="form-group">
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showSkin}
+                    onChange={(e) => onShowSkinChange(e.target.checked)}
+                    disabled={isOptimizing}
+                  />
+                  <span>显示皮肤</span>
+                </label>
+              </div>
+              <label htmlFor="skin-opacity-slider">
+                皮肤透明度: {Math.round(skinOpacity * 100)}%
+              </label>
+              <input
+                id="skin-opacity-slider"
+                type="range"
+                min="0"
+                max="100"
+                value={skinOpacity * 100}
+                step="1"
+                onChange={(e) => onSkinOpacityChange(parseInt(e.target.value) / 100)}
                 disabled={humanPoints === 0 || isOptimizing}
               />
             </div>
@@ -186,7 +330,7 @@ export default function Sidebar({
                   onChange={(e) => onShowMarkersChange(e.target.checked)}
                   disabled={isOptimizing}
                 />
-                <span>显示标记</span>
+                <span>显示偏移标记</span>
               </label>
             </div>
           </section>
