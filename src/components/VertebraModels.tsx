@@ -59,7 +59,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       const oldModels = [...modelsRef.current]
       
       if (oldGroup || oldModels.length > 0) {
-        console.log('reloadKey改变，清理旧模型，模型数量:', oldModels.length)
         
         // 清理所有模型相关的对象
         const objectsToRemove: THREE.Object3D[] = []
@@ -253,71 +252,16 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
           // 将BoxHelper引用保存到模型的userData中，方便后续更新
           model.userData.boxHelper = boxHelper
 
-          // // 可选：在模型z轴最大值位置添加黄色点（调试用）
-          // // 计算模型的局部边界框（在模型的局部坐标系中）
-          // const localBox = new THREE.Box3()
-          // model.traverse((child) => {
-          //   if (child instanceof THREE.Mesh && child.geometry) {
-          //     // 获取几何体的位置属性
-          //     const position = child.geometry.attributes.position
-          //     if (position) {
-          //       // 获取子对象的局部变换矩阵
-          //       const matrix = new THREE.Matrix4()
-          //       matrix.compose(child.position, child.quaternion, child.scale)
-                
-          //       // 将每个顶点转换到模型的局部坐标系
-          //       for (let i = 0; i < position.count; i++) {
-          //         const vertex = new THREE.Vector3()
-          //         vertex.fromBufferAttribute(position, i)
-          //         // 应用子对象的变换
-          //         vertex.applyMatrix4(matrix)
-          //         localBox.expandByPoint(vertex)
-          //       }
-          //     }
-          //   }
-          // })
-
-          // // 如果边界框有效，计算z轴最大值位置
-          // if (!localBox.isEmpty()) {
-          //   const localCenter = localBox.getCenter(new THREE.Vector3())
-          //   const localSize = localBox.getSize(new THREE.Vector3())
-          //   // z轴最大值位置（局部坐标系）
-          //   const localZMax = localCenter.z + localSize.z / 2
-
-          //   // 创建黄色点（z轴最大值位置）
-          //   const pointHelper = new THREE.Mesh(
-          //     new THREE.SphereGeometry(0.01, 8, 8),
-          //     new THREE.MeshBasicMaterial({ color: 0xffff00 })
-          //   )
-          //   // 将点添加到模型内部作为子对象，使用局部坐标系
-          //   pointHelper.position.set(localCenter.x, localCenter.y, localZMax)
-          //   pointHelper.userData.isZMaxHelper = true
-          //   model.add(pointHelper)
-
-          //   // 保存pointHelper引用到userData，方便后续查找
-          //   model.userData.pointHelper = pointHelper
-          // }
-
           vertebraGroup.add(model)
           models.push(model)
           modelsRef.current = models // 保存模型引用
           loadedCount++
-
-          // console.log(`加载脊椎模型 ${modelName} (${loadedCount}/${totalCount})`)
-          // 检查当前scene中是否有vertebraGroup
-          // const hasVertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
-          // if (hasVertebraGroup) {
-          //   console.log('vertebraGroup已存在')
-          //   scene.remove(hasVertebraGroup)
-          //   // return
-          // }
           if (loadedCount === totalCount) {
             scene.add(vertebraGroup)
             
             if (onModelsLoaded) {
               onModelsLoaded(models)
             }
-            console.log('所有脊椎模型已加载完成')
             hasLoadedRef.current = true
             loadingRef.current = false
             
@@ -336,9 +280,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       const oldGroup = vertebraGroupRef.current
       // 保存当前模型列表的副本，避免在清理过程中被修改
       const oldModels = [...modelsRef.current]
-      
-      console.log('开始清理模型，模型数量:', oldModels.length)
-      
       // 清理所有模型相关的对象（BoxHelper、标记偏移点、连线等）
       const objectsToRemove: THREE.Object3D[] = []
       const vertebraNamesToClean = new Set<string>()
@@ -355,28 +296,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       if (historyVertebraGroup) {
         objectsToRemove.push(historyVertebraGroup)
       }
-      // scene.traverse((child) => {
-      //   if (child.userData && child.userData.vertebraName) {
-      //     const vertebraName = child.userData.vertebraName
-      //     // 如果是旧模型相关的对象，标记为需要清理
-      //     if (vertebraNamesToClean.has(vertebraName)) {
-      //       // BoxHelper
-      //       if (child.userData.isBoxHelper && child instanceof THREE.BoxHelper) {
-      //         objectsToRemove.push(child)
-      //       }
-      //       // 标记偏移点
-      //       if (child.userData.isMarkerOffsetHelper && child instanceof THREE.Mesh) {
-      //         objectsToRemove.push(child)
-      //       }
-      //       // 标记偏移连线
-      //       if (child.userData.isMarkerOffsetLine && child instanceof THREE.Line) {
-      //         objectsToRemove.push(child)
-      //       }
-      //     }
-      //   }
-      // })
-      
-      console.log('找到需要清理的对象数量:', objectsToRemove.length)
       
       // 移除并释放所有收集到的对象
       objectsToRemove.forEach((obj) => {
@@ -423,8 +342,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       modelsRef.current = []
       hasLoadedRef.current = false
       loadingRef.current = false
-      
-      console.log('模型清理完成')
     }
   }, [spinePoints, transformParams, scene, showBoxHelpers, showMarkers, reloadKey, onModelsLoaded, allowedYOverlapRatio])
 
@@ -505,10 +422,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               return
             }
 
-            console.log('=== 开始碰撞检测和缩放优化 ===')
-
             if (!hasAnyCollision(modelsToOptimize)) {
-              console.log('碰撞检测结果: 无碰撞，无需缩放优化')
               modelsToOptimize.forEach((model) => {
                 model.userData.collisionOptimized = true
               })
@@ -518,8 +432,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               }
               return
             }
-
-            console.log('碰撞检测结果: 发现碰撞，开始缩放优化...')
 
             let minScale = 0.1
             let maxScale = 1.0
@@ -553,9 +465,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
             modelsToOptimize.forEach((model) => {
               model.userData.collisionOptimized = true
             })
-
-            console.log(`缩放优化结果: 最终缩放比例 = ${(bestScale * 100).toFixed(2)}%, 迭代次数 = ${iterations}`)
-            console.log('=== 碰撞检测和缩放优化完成 ===')
 
             // 优化完成，延迟一点确保状态稳定后调用回调
             if (onComplete) {

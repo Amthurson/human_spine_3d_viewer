@@ -51,14 +51,12 @@ function normalizePointJson(jsonText: string): string {
     // 如果已经是对象格式 {x, y}，直接返回
     if (typeof firstItem === 'object' && firstItem !== null && !Array.isArray(firstItem)) {
       if ('x' in firstItem || 'y' in firstItem) {
-        console.log('point.json 已经是对象格式，无需转换')
         return jsonText
       }
     }
     
     // 如果是数组格式 [[123, 123]]，转换为对象格式
     if (Array.isArray(firstItem)) {
-      console.log('检测到数组格式 [[x, y]]，转换为对象格式 [{x, y}]')
       const normalized = data.map((item: number[]) => {
         if (Array.isArray(item)) {
           return {
@@ -102,7 +100,6 @@ export default function ThreeScene() {
       const stored = localStorage.getItem('markers')
       if (stored) {
         const parsed = JSON.parse(stored)
-        console.log('从 localStorage 加载标记:', parsed)
         // 将存储的位置数据转换为 THREE.Vector3
         const markers: Record<string, Marker> = {}
         Object.keys(parsed).forEach((key) => {
@@ -112,7 +109,6 @@ export default function ThreeScene() {
             vertebraName: marker.vertebraName,
           }
         })
-        console.log('转换后的标记:', markers)
         return markers
       }
     } catch (error) {
@@ -235,9 +231,7 @@ export default function ThreeScene() {
 
     const initWasmModule = async () => {
       try {
-        console.log('初始化 WASM 模块...')
         await initWasm()
-        console.log('WASM 初始化完成')
         setWasmInitialized(true)
         wasmInitializedRef.current = true
       } catch (error) {
@@ -260,39 +254,26 @@ export default function ThreeScene() {
     setProcessingError(null)
 
     try {
-      console.log('开始处理文件...')
-      console.log(`PointCloud.png 大小: ${pcFile.size} 字节`)
-      console.log(`point.json 大小: ${spineFile.size} 字节`)
-      console.log(`Color.png 大小: ${colorFile.size} 字节`)
       // 读取文件
       const pcBytes = new Uint8Array(await pcFile.arrayBuffer())
-      console.log(spineFile)
       const colorBytes = new Uint8Array(await colorFile.arrayBuffer())
       let spineText = await spineFile.text()
-      console.log('spineText (原始)', spineText)
 
       // 统一 point.json 格式，兼容两种格式：[{x,y}] 和 [[x,y]]
       spineText = normalizePointJson(spineText)
-      console.log('spineText (转换后)', spineText)
 
       // 调用 WASM
-      console.log('调用 WASM process_point_cloud...')
       let result = process_point_cloud(pcBytes, spineText, colorBytes)
 
       // 如果返回的是字符串，尝试解析
       if (typeof result === 'string') {
-        console.log('检测到返回值为 string，尝试 JSON.parse...')
         result = JSON.parse(result)
       }
-
-      console.log('WASM 处理完成，结果:', result)
 
       // 提取 spine 和 human_points
       const spineData = result.spine || []
       const humanPointsData = result.human_points || []
       const rawColorData = result.color || result.human_points_colors || []
-
-      console.log(`处理完成：spine 点数 = ${spineData.length}，human_points 点数 = ${humanPointsData.length}，color 点数 = ${rawColorData.length}`)
       
       // 转换颜色数据格式，支持多种格式：{r,g,b}[] 或 [r,g,b][] 或 {r:255, g:255, b:255}[]
       const colorData: { r: number, g: number, b: number }[] = rawColorData.map((col: { r?: number, g?: number, b?: number, [key: number]: number | undefined } | number[]) => {
@@ -310,11 +291,6 @@ export default function ThreeScene() {
         // 默认白色
         return { r: 255, g: 255, b: 255 }
       })
-      
-      console.log(`颜色数据转换完成：原始长度=${rawColorData.length}，转换后长度=${colorData.length}`)
-      if (colorData.length > 0) {
-        console.log('颜色数据示例（前3个）:', colorData.slice(0, 3))
-      }
 
       // 转换为 Point3D 格式
       const spinePointsArray: Point3D[] = spineData.map((p: { x?: number; y?: number; z?: number } | number[]) => {
@@ -359,8 +335,6 @@ export default function ThreeScene() {
 
       // 触发模型重新加载
       setModelReloadKey(prev => prev + 1)
-
-      console.log('状态更新完成')
     } catch (error) {
       console.error('处理文件时出错:', error)
       setProcessingError(`处理失败: ${error}`)
@@ -437,11 +411,8 @@ export default function ThreeScene() {
     if (!mountElement) return
 
     if (sceneRef.current) {
-      console.log('Scene already initialized, skipping...')
       return
     }
-
-    console.log('Initializing Three.js scene...')
 
     // 创建场景
     const scene = new THREE.Scene()
@@ -1282,34 +1253,6 @@ export default function ThreeScene() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 加载人体点云数据
-  // useEffect(() => {
-  //   fetch('/src/assets/human_points.json')
-  //     .then((response) => response.json())
-  //     .then((data: Point3D[]) => {
-  //       console.log('加载人体点云 JSON 成功:', data.length, '个点')
-  //       setHumanPoints(data)
-
-  //       // 处理点云并获取变换参数
-  //       const { transformParams: params } = processPointCloud(data)
-  //       setTransformParams(params)
-
-  //       // 加载脊柱点
-  //       fetch('/src/assets/spine.json')
-  //         .then((response) => response.json())
-  //         .then((spineData: Point3D[]) => {
-  //           console.log('加载脊柱点 JSON 成功:', spineData.length, '个点')
-  //           setSpinePoints(spineData)
-  //         })
-  //         .catch((error) => {
-  //           console.error('加载 spine_points_pca.json 失败:', error)
-  //         })
-  //     })
-  //     .catch((error) => {
-  //       console.error('加载 human_points_pca.json 失败:', error)
-  //     })
-  // }, [])
-
   // 处理模型加载完成
   const handleModelsLoaded = useCallback(
     (loadedModels: THREE.Group[]) => {
@@ -1323,7 +1266,6 @@ export default function ThreeScene() {
       
       if (currentApplyOffset) {
         // 先应用偏移，调整位置
-        console.log('=== 开始应用标记偏移 ===')
         loadedModels.forEach((model) => {
           if (model.userData && model.userData.vertebraName && model.userData.spinePoint) {
             const vertebraName = model.userData.vertebraName
@@ -1340,7 +1282,6 @@ export default function ThreeScene() {
             }
           }
         })
-        console.log('=== 标记偏移应用完成 ===')
       }
       
         // 第二步：等待位置调整完成，然后进行碰撞检测和缩放优化
@@ -1359,7 +1300,6 @@ export default function ThreeScene() {
       setTimeout(() => {
         if (sceneRef.current && markersGroupRef.current) {
           const currentMarkers = loadMarkersFromStorage()
-          console.log('恢复标记，当前缓存中的标记:', currentMarkers)
           const scene = sceneRef.current.scene
           
           Object.keys(currentMarkers).forEach((vertebraName) => {
@@ -1403,8 +1343,6 @@ export default function ThreeScene() {
                 line.userData.isMarkerLine = true
                 line.visible = showMarkersRef.current // 使用 ref 获取最新值
                 markersGroupRef.current!.add(line)
-                
-                console.log(`恢复标记: ${vertebraName}`, marker.position)
               }
             }
           })
@@ -1441,7 +1379,6 @@ export default function ThreeScene() {
 
     // 设置防抖定时器，延迟 1 秒后执行优化
     const debounceTimer = setTimeout(() => {
-      console.log(`Y轴允许重合比例已改变为 ${(allowedYOverlapRatio * 100).toFixed(0)}%，开始碰撞检测和缩放优化...`)
       if (vertebraModelsRef.current) {
         setIsOptimizing(true) // 开始优化
         vertebraModelsRef.current.optimizeScales(() => {

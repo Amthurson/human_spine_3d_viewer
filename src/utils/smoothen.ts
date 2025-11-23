@@ -80,19 +80,7 @@ export const getHeightMapByRawPoints = ({rawPoints, humanColors, nx, ny}: {rawPo
         }
 
         // 处理颜色（支持对象格式 {r, g, b} 和数组格式 [r, g, b]）
-        const col = humanColors?.[i];
-        
-        // 调试：检查前几个点的颜色数据
-        if (i < 5) {
-            console.log(`点[${i}]原始颜色数据:`, { 
-                hasHumanColors: !!humanColors, 
-                humanColorsLength: humanColors?.length,
-                col, 
-                colType: typeof col,
-                isArray: Array.isArray(col)
-            });
-        }
-        
+        const col = humanColors?.[i];  
         let r: number, g: number, b: number;
         if (!col) {
             // 如果没有颜色数据，使用默认白色
@@ -112,11 +100,6 @@ export const getHeightMapByRawPoints = ({rawPoints, humanColors, nx, ny}: {rawPo
             r = g = b = 1;
         }
         
-        // 调试：检查处理后的颜色值
-        if (i < 5) {
-            console.log(`点[${i}]处理后颜色:`, { r, g, b, idx, ix, iy });
-        }
-        
         colorMapR[idx] += r;
         colorMapG[idx] += g;
         colorMapB[idx] += b;
@@ -125,7 +108,6 @@ export const getHeightMapByRawPoints = ({rawPoints, humanColors, nx, ny}: {rawPo
     // 同一格多点 -> 取平均 z
     let validSum = 0;
     let validCount = 0;
-    let colorSampleCount = 0;
     for (let i = 0; i < heightMap.length; i++) {
         if (countGrid[i] > 0) {
             heightMap[i] /= countGrid[i];
@@ -137,15 +119,8 @@ export const getHeightMapByRawPoints = ({rawPoints, humanColors, nx, ny}: {rawPo
             validMask[i] = 1;
             validSum += heightMap[i];
             validCount++;
-            
-            // 调试：检查前几个有效网格的颜色
-            if (colorSampleCount < 5 && (colorMapR[i] > 0 || colorMapG[i] > 0 || colorMapB[i] > 0)) {
-                console.log(`颜色图网格[${i}]:`, { r: colorMapR[i], g: colorMapG[i], b: colorMapB[i], count: countGrid[i] });
-                colorSampleCount++;
-            }
         }
     }
-    console.log(`颜色图统计: 有效网格=${validCount}, 有颜色的网格=${colorSampleCount}`);
 
     // 填补无数据格子（用全局平均高度）
     const globalMean = validCount > 0 ? validSum / validCount : 0;

@@ -68,7 +68,6 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
       // 创建球体几何体
       let sphereGeometry: THREE.BufferGeometry
       if (pointType === 'sphere') {
-        console.log('创建球体几何体')
         // 球体材质（半透明，增强反光）
         const sphereMaterial = new THREE.MeshStandardMaterial({
           color: 0xcccccc,
@@ -106,7 +105,6 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         meshRef.current = instancedMesh
       } else if (showPointCloud) {
         const geomSmooth = new THREE.BufferGeometry();
-        console.log({colorsSmooth})
         geomSmooth.setAttribute(
             "position",
             new THREE.BufferAttribute(positionsSmooth, 3)

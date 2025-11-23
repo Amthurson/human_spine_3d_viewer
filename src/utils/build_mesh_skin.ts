@@ -57,18 +57,7 @@ function sampleColorFromGrid(x: number, y: number, colorMapR: Float32Array, colo
         r: (Number.isNaN(r) || r === undefined) ? 1 : Math.max(0, Math.min(1, r)), 
         g: (Number.isNaN(g) || g === undefined) ? 1 : Math.max(0, Math.min(1, g)), 
         b: (Number.isNaN(b) || b === undefined) ? 1 : Math.max(0, Math.min(1, b)) 
-    };
-    
-    // 调试：检查采样结果
-    if (ix < 5 && iy < 5) {
-        console.log(`sampleColorFromGrid:`, {
-            x, y, u, v, fx, fy, ix, iy,
-            idx00, idx10, idx01, idx11,
-            r00, r10, r01, r11, r,
-            result
-        });
     }
-    
     return result;
 }
 
@@ -104,17 +93,6 @@ export const buildHumanPatchMeshFromHeightMap = ({
     transformParams?: TransformParams,
     skinOpacity?: number,
 }): THREE.Mesh | null => {
-    // 调试：检查颜色图的前几个值
-    let validColorCount = 0;
-    for (let i = 0; i < Math.min(100, colorMapR.length); i++) {
-        if (validMask[i] && (colorMapR[i] > 0 || colorMapG[i] > 0 || colorMapB[i] > 0)) {
-            validColorCount++;
-            if (validColorCount <= 5) {
-                console.log(`颜色图[${i}]:`, { r: colorMapR[i], g: colorMapG[i], b: colorMapB[i], valid: validMask[i] });
-            }
-        }
-    }
-    console.log(`颜色图有效值数量: ${validColorCount}/${colorMapR.length}`);
     const positions = [];
     const colors = [];
     const indices   = [];
