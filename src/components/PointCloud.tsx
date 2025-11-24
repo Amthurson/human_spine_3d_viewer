@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { processPointCloud } from '../utils/pointCloudUtils'
 import type { Point3D } from '../utils/pointCloudUtils'
 import { smoothen } from '@/utils/smoothen'
-import { buildHumanPatchMeshFromHeightMap } from '@/utils/build_mesh_skin'
+import { buildHumanPatchMeshFromHeightMap, type SkinMaterialParams } from '@/utils/build_mesh_skin'
 
 interface PointCloudProps {
   points: Point3D[]
@@ -17,9 +17,10 @@ interface PointCloudProps {
   showSkin: boolean
   pointSize: number
   showOriginalColor: boolean
+  skinParams?: SkinMaterialParams & { depthGapRatio?: number }
 }
 
-export default function PointCloud({ points, opacity, skinOpacity, scene, pointType, humanColors, showPointCloud, showSkin, pointSize, showOriginalColor }: PointCloudProps) {
+export default function PointCloud({ points, opacity, skinOpacity, scene, pointType, humanColors, showPointCloud, showSkin, pointSize, showOriginalColor, skinParams }: PointCloudProps) {
   const meshRef = useRef<THREE.InstancedMesh | THREE.Points | null>(null)
   const humanPatchMeshRef = useRef<THREE.Mesh | null>(null)
   const pointsDataRef = useRef<{ transformedPoints: THREE.Vector3[]; minZ: number; maxZ: number } | null>(null)
@@ -67,19 +68,27 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
 
       // 创建球体几何体
       let sphereGeometry: THREE.BufferGeometry
-      if (pointType === 'sphere') {
-        // 球体材质（半透明，增强反光）
+      if (pointType === 'sphere' && showPointCloud) {
+        // 球体材质（使用 instanceColor）
+        // MeshStandardMaterial 会自动使用 InstancedMesh 的 instanceColor
         const sphereMaterial = new THREE.MeshStandardMaterial({
-          color: 0xcccccc,
-          metalness: 0.8, // 从0.7增加到0.8
-          roughness: 0.45, // 从0.3降低到0.2，让反光更明显
+          color: 0xffffff, // 基础颜色为白色，会被 instanceColor 覆盖
+          metalness: 0.5,
+          roughness: 0.5,
           transparent: true,
           opacity,
-          emissiveIntensity: 1, // 从0增加到0.2
-          envMapIntensity: 2, // 增加环境光反射
-        })
-        // sphereGeometry = new THREE.SphereGeometry(0.005, 8, 8)
-        sphereGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01)
+          // 添加轻微自发光，确保颜色可见
+          emissive: 0x000000,
+          emissiveIntensity: 0.1,
+        });
+        // 球体几何体
+        sphereGeometry = new THREE.BoxGeometry(pointSize, pointSize, pointSize);
+        // 给几何体每个顶点都复制上colorsSmooth颜色数组（所有顶点都用该点的颜色）
+        // BoxGeometry有8个顶点，但我们希望每个实例的“box”颜色由其点的颜色决定
+        // 所以仅设置 instanceColor，在 InstancedMesh 渲染时设置每个实例的颜色
+        // 而不是在geometry顶点属性上设置
+        // 但 THREE.InstancedMesh 只支持 instanceColor
+
         // 使用 InstancedMesh 高效渲染
         const instancedMesh = new THREE.InstancedMesh(
           sphereGeometry,
@@ -90,11 +99,30 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         const matrix = new THREE.Matrix4()
         transformedPoints.forEach((point, i) => {
           matrix.makeTranslation(point.x, point.y, point.z)
-          // const percent = (minOffset - point.z) / (minOffset - minZ);
-          // 将 percent 映射到 0.3-1.0 范围，避免过暗的颜色
-          // const brightness = 0.3 + percent * 0.7;
-          // instancedMesh.setColorAt(i, new THREE.Color(brightness, brightness, brightness))
           instancedMesh.setMatrixAt(i, matrix)
+          
+          // 使用 humanColors 为每个实例设置颜色
+          let r = colorsSmooth[i * 3];
+          let g = colorsSmooth[i * 3 + 1];
+          let b = colorsSmooth[i * 3 + 2];
+          
+          // 如果颜色值无效，使用默认白色
+          if (r === undefined || isNaN(r) || r < 0) r = 1;
+          if (g === undefined || isNaN(g) || g < 0) g = 1;
+          if (b === undefined || isNaN(b) || b < 0) b = 1;
+          
+          // 确保颜色值在有效范围内
+          r = Math.max(0, Math.min(1, r));
+          g = Math.max(0, Math.min(1, g));
+          b = Math.max(0, Math.min(1, b));
+          
+          // 调试：打印前几个颜色值
+          if (i < 3) {
+            console.log(`Point ${i} color:`, { r, g, b, humanColor: humanColors?.[i] });
+          }
+          
+          const color = new THREE.Color(r, g, b);
+          instancedMesh.setColorAt(i, color)
         })
   
         instancedMesh.instanceMatrix.needsUpdate = true
@@ -115,12 +143,12 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         );
   
         const matSmooth = new THREE.PointsMaterial({
-            color: showOriginalColor ? undefined : 0xcccccc,
-            vertexColors: showOriginalColor,
-            size: pointSize,
-            sizeAttenuation: true,
-            transparent: true,
-            opacity,
+          color: showOriginalColor ? undefined : 0xcccccc,
+          vertexColors: showOriginalColor,
+          size: pointSize,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity,
         });
   
         const pointsSmoothObj = new THREE.Points(geomSmooth, matSmooth);
@@ -129,13 +157,31 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
       }
 
       if (showSkin) {
+        const depthGapRatio = skinParams?.depthGapRatio ?? 0.25
         const humanPatchMesh = buildHumanPatchMeshFromHeightMap({
           heightMap: heightMapFiltered,
           validMask,
           nx, ny, xMin, xMax, yMin, yMax, colorMapR, colorMapG, colorMapB, 
-          depthGap: (zMax - zMin) * 0.25,
+          depthGap: (zMax - zMin) * depthGapRatio,
           transformParams,
-          skinOpacity
+          skinOpacity,
+          meshColor: skinParams?.meshColor,
+          metalness: skinParams?.metalness,
+          roughness: skinParams?.roughness,
+          transmission: skinParams?.transmission,
+          thickness: skinParams?.thickness,
+          ior: skinParams?.ior,
+          clearcoat: skinParams?.clearcoat,
+          clearcoatRoughness: skinParams?.clearcoatRoughness,
+          reflectivity: skinParams?.reflectivity,
+          attenuationDistance: skinParams?.attenuationDistance,
+          attenuationColor: skinParams?.attenuationColor,
+          envMapIntensity: skinParams?.envMapIntensity,
+          sheen: skinParams?.sheen,
+          sheenColor: skinParams?.sheenColor,
+          sheenRoughness: skinParams?.sheenRoughness,
+          useVertexColors: skinParams?.useVertexColors,
+          colorBrightness: skinParams?.colorBrightness,
         })
         if (humanPatchMesh) {
           humanPatchMesh.receiveShadow = true;
@@ -174,7 +220,7 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
     } catch (error) {
       console.error('Error creating point cloud:', error)
     }
-  }, [points, scene, opacity, pointType, humanColors, skinOpacity, showPointCloud, showSkin, pointSize, showOriginalColor])
+  }, [points, scene, opacity, pointType, humanColors, skinOpacity, showPointCloud, showSkin, pointSize, showOriginalColor, skinParams])
 
   // 更新透明度
   useEffect(() => {
@@ -183,6 +229,40 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
       material.opacity = opacity
     }
   }, [opacity])
+
+  // 更新皮肤材质参数
+  useEffect(() => {
+    if (!humanPatchMeshRef.current || !skinParams) return
+    const material = humanPatchMeshRef.current.material
+    if (!(material instanceof THREE.MeshPhysicalMaterial)) return
+    
+    // 更新所有材质属性
+    if (skinParams.meshColor) material.color.copy(skinParams.meshColor)
+    if (skinParams.metalness !== undefined) material.metalness = skinParams.metalness
+    if (skinParams.roughness !== undefined) material.roughness = skinParams.roughness
+    if (skinParams.transmission !== undefined) material.transmission = skinParams.transmission
+    if (skinParams.thickness !== undefined) material.thickness = skinParams.thickness
+    if (skinParams.ior !== undefined) material.ior = skinParams.ior
+    if (skinParams.clearcoat !== undefined) material.clearcoat = skinParams.clearcoat
+    if (skinParams.clearcoatRoughness !== undefined) material.clearcoatRoughness = skinParams.clearcoatRoughness
+    if (skinParams.reflectivity !== undefined) material.reflectivity = skinParams.reflectivity
+    if (skinParams.attenuationDistance !== undefined) material.attenuationDistance = skinParams.attenuationDistance
+    if (skinParams.attenuationColor) material.attenuationColor.copy(skinParams.attenuationColor)
+    if (skinParams.envMapIntensity !== undefined) material.envMapIntensity = skinParams.envMapIntensity
+    if (skinParams.sheen !== undefined) material.sheen = skinParams.sheen
+    if (skinParams.sheenColor) material.sheenColor.copy(skinParams.sheenColor)
+    if (skinParams.sheenRoughness !== undefined) material.sheenRoughness = skinParams.sheenRoughness
+    material.needsUpdate = true
+  }, [skinParams])
+
+  // 更新皮肤透明度
+  useEffect(() => {
+    if (humanPatchMeshRef.current && humanPatchMeshRef.current.material instanceof THREE.MeshPhysicalMaterial) {
+      const material = humanPatchMeshRef.current.material as THREE.MeshPhysicalMaterial
+      material.opacity = skinOpacity
+      material.needsUpdate = true
+    }
+  }, [skinOpacity])
 
   // 更新颜色（当 minOffset 改变时）
   // useEffect(() => {

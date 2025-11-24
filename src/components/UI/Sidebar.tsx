@@ -43,6 +43,42 @@ interface SidebarProps {
   onPointSizeChange: (size: number) => void
   showOriginalColor: boolean
   onShowOriginalColorChange: (show: boolean) => void
+  
+  // 皮肤材质参数
+  skinColor: string
+  onSkinColorChange: (color: string) => void
+  skinMetalness: number
+  onSkinMetalnessChange: (value: number) => void
+  skinRoughness: number
+  onSkinRoughnessChange: (value: number) => void
+  skinTransmission: number
+  onSkinTransmissionChange: (value: number) => void
+  skinThickness: number
+  onSkinThicknessChange: (value: number) => void
+  skinIor: number
+  onSkinIorChange: (value: number) => void
+  skinClearcoat: number
+  onSkinClearcoatChange: (value: number) => void
+  skinClearcoatRoughness: number
+  onSkinClearcoatRoughnessChange: (value: number) => void
+  skinReflectivity: number
+  onSkinReflectivityChange: (value: number) => void
+  skinAttenuationDistance: number
+  onSkinAttenuationDistanceChange: (value: number) => void
+  skinAttenuationColor: string
+  onSkinAttenuationColorChange: (color: string) => void
+  skinEnvMapIntensity: number
+  onSkinEnvMapIntensityChange: (value: number) => void
+  skinSheen: number
+  onSkinSheenChange: (value: number) => void
+  skinSheenColor: string
+  onSkinSheenColorChange: (color: string) => void
+  skinSheenRoughness: number
+  onSkinSheenRoughnessChange: (value: number) => void
+  skinDepthGapRatio: number
+  onSkinDepthGapRatioChange: (value: number) => void
+  useVertexColors: boolean
+  onUseVertexColorsChange: (value: boolean) => void
 }
 
 export default function Sidebar({
@@ -76,14 +112,48 @@ export default function Sidebar({
   onPointSizeChange,
   showOriginalColor,
   onShowOriginalColorChange,
-  // pointType,
-  // onPointTypeChange,
+  useVertexColors,
+  onUseVertexColorsChange,
+  // skinColor,
+  // onSkinColorChange,
+  // skinMetalness,
+  // onSkinMetalnessChange,
+  // skinRoughness,
+  // onSkinRoughnessChange,
+  // skinTransmission,
+  // onSkinTransmissionChange,
+  // skinThickness,
+  // onSkinThicknessChange,
+  // skinIor,
+  // onSkinIorChange,
+  // skinClearcoat,
+  // onSkinClearcoatChange,
+  // skinClearcoatRoughness,
+  // onSkinClearcoatRoughnessChange,
+  // skinReflectivity,
+  // onSkinReflectivityChange,
+  // skinAttenuationDistance,
+  // onSkinAttenuationDistanceChange,
+  // skinAttenuationColor,
+  // onSkinAttenuationColorChange,
+  // skinEnvMapIntensity,
+  // onSkinEnvMapIntensityChange,
+  // skinSheen,
+  // onSkinSheenChange,
+  // skinSheenColor,
+  // onSkinSheenColorChange,
+  // skinSheenRoughness,
+  // onSkinSheenRoughnessChange,
+  // skinDepthGapRatio,
+  // onSkinDepthGapRatioChange,
+  pointType,
+  onPointTypeChange,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [allowedYOverlapRatioValue, setAllowedYOverlapRatioValue] = useState(allowedYOverlapRatio)
-  // const handlePointTypeChange = (type: 'sphere' | 'box') => () => {
-  //   onPointTypeChange(type)
-  // }
+  const handlePointTypeChange = (type: 'sphere' | 'box') => () => {
+    onPointTypeChange(type)
+  }
 
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
@@ -233,7 +303,7 @@ export default function Sidebar({
                 </label>
               </div>
             </div>
-            {/* <div className="form-group">
+            <div className="form-group">
               <label htmlFor="point-type-radio">
                 点云类型
               </label>
@@ -259,7 +329,7 @@ export default function Sidebar({
                   <span>平面</span>
                 </label>
               </div>
-            </div> */}
+            </div>
             {/* <div className="form-group">
               <label htmlFor="min-offset-slider">
                 Depth-Brightness Transition: {minOffset.toFixed(2)}
@@ -305,6 +375,228 @@ export default function Sidebar({
                 onChange={(e) => onSkinOpacityChange(parseInt(e.target.value) / 100)}
                 disabled={humanPoints === 0 || isOptimizing}
               />
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={useVertexColors}
+                    onChange={(e) => onUseVertexColorsChange(e.target.checked)}
+                    disabled={isOptimizing}
+                  />
+                  <span>使用照片原色</span>
+                </label>
+              </div>
+              {/* <label htmlFor="skin-color-picker">皮肤颜色:</label> */}
+              {/* <input
+                id="skin-color-picker"
+                type="color"
+                value={skinColor}
+                onChange={(e) => onSkinColorChange(e.target.value)}
+                disabled={humanPoints === 0 || isOptimizing}
+                style={{ width: '100%', height: '30px' }}
+              />
+              
+              <label htmlFor="skin-metalness-slider">
+                金属度: {skinMetalness.toFixed(2)}
+              </label>
+              <input
+                id="skin-metalness-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinMetalness}
+                step="0.01"
+                onChange={(e) => onSkinMetalnessChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-roughness-slider">
+                粗糙度: {skinRoughness.toFixed(2)}
+              </label>
+              <input
+                id="skin-roughness-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinRoughness}
+                step="0.01"
+                onChange={(e) => onSkinRoughnessChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-transmission-slider">
+                透射度: {skinTransmission.toFixed(2)}
+              </label>
+              <input
+                id="skin-transmission-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinTransmission}
+                step="0.01"
+                onChange={(e) => onSkinTransmissionChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-thickness-slider">
+                厚度: {skinThickness.toFixed(2)}
+              </label>
+              <input
+                id="skin-thickness-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinThickness}
+                step="0.01"
+                onChange={(e) => onSkinThicknessChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-ior-slider">
+                折射率 (IOR): {skinIor.toFixed(2)}
+              </label>
+              <input
+                id="skin-ior-slider"
+                type="range"
+                min="1"
+                max="2"
+                value={skinIor}
+                step="0.01"
+                onChange={(e) => onSkinIorChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-clearcoat-slider">
+                清漆层: {skinClearcoat.toFixed(2)}
+              </label>
+              <input
+                id="skin-clearcoat-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinClearcoat}
+                step="0.01"
+                onChange={(e) => onSkinClearcoatChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-clearcoat-roughness-slider">
+                清漆粗糙度: {skinClearcoatRoughness.toFixed(2)}
+              </label>
+              <input
+                id="skin-clearcoat-roughness-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinClearcoatRoughness}
+                step="0.01"
+                onChange={(e) => onSkinClearcoatRoughnessChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-reflectivity-slider">
+                反射率: {skinReflectivity.toFixed(2)}
+              </label>
+              <input
+                id="skin-reflectivity-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinReflectivity}
+                step="0.01"
+                onChange={(e) => onSkinReflectivityChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-attenuation-distance-slider">
+                衰减距离: {skinAttenuationDistance.toFixed(2)}
+              </label>
+              <input
+                id="skin-attenuation-distance-slider"
+                type="range"
+                min="0"
+                max="5"
+                value={skinAttenuationDistance}
+                step="0.1"
+                onChange={(e) => onSkinAttenuationDistanceChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-attenuation-color-picker">衰减颜色:</label>
+              <input
+                id="skin-attenuation-color-picker"
+                type="color"
+                value={skinAttenuationColor}
+                onChange={(e) => onSkinAttenuationColorChange(e.target.value)}
+                disabled={humanPoints === 0 || isOptimizing}
+                style={{ width: '100%', height: '30px' }}
+              />
+              
+              <label htmlFor="skin-envmap-intensity-slider">
+                环境光强度: {skinEnvMapIntensity.toFixed(2)}
+              </label>
+              <input
+                id="skin-envmap-intensity-slider"
+                type="range"
+                min="0"
+                max="5"
+                value={skinEnvMapIntensity}
+                step="0.1"
+                onChange={(e) => onSkinEnvMapIntensityChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-sheen-slider">
+                光泽度: {skinSheen.toFixed(2)}
+              </label>
+              <input
+                id="skin-sheen-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinSheen}
+                step="0.01"
+                onChange={(e) => onSkinSheenChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-sheen-color-picker">光泽颜色:</label>
+              <input
+                id="skin-sheen-color-picker"
+                type="color"
+                value={skinSheenColor}
+                onChange={(e) => onSkinSheenColorChange(e.target.value)}
+                disabled={humanPoints === 0 || isOptimizing}
+                style={{ width: '100%', height: '30px' }}
+              />
+              
+              <label htmlFor="skin-sheen-roughness-slider">
+                光泽粗糙度: {skinSheenRoughness.toFixed(2)}
+              </label>
+              <input
+                id="skin-sheen-roughness-slider"
+                type="range"
+                min="0"
+                max="1"
+                value={skinSheenRoughness}
+                step="0.01"
+                onChange={(e) => onSkinSheenRoughnessChange(parseFloat(e.target.value))}
+                disabled={humanPoints === 0 || isOptimizing}
+              />
+              
+              <label htmlFor="skin-depth-gap-ratio-slider">
+                深度间隙比例: {(skinDepthGapRatio * 100).toFixed(0)}%
+              </label>
+              <input
+                id="skin-depth-gap-ratio-slider"
+                type="range"
+                min="0"
+                max="100"
+                value={skinDepthGapRatio * 100}
+                step="1"
+                onChange={(e) => onSkinDepthGapRatioChange(parseInt(e.target.value) / 100)}
+                disabled={humanPoints === 0 || isOptimizing}
+              /> */}
             </div>
           </section>
 

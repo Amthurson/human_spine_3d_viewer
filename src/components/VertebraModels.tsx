@@ -161,7 +161,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       loadModel(loader, modelPath, {
         position: [point.x, point.y, point.z],
         rotation: [0, 0, 0],
-        scale: [1, 1, -1], // z轴镜像反转
+        scale: [1, 1, 1], // 移除z轴镜像反转
         centerToOrigin: true,
         autoAdjustCamera: false,
         userData: {
@@ -181,7 +181,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
           // 碰撞检测优化会统一调整所有模型的大小
           const initialScale = 0.6 / maxSize; // 统一的初始缩放值
           const baseScale = Math.abs(initialScale); // 保存基础缩放值（正值）
-          model.scale.set(initialScale, initialScale, initialScale * -1); // z轴镜像翻转
+          model.scale.set(initialScale, initialScale, initialScale); // 移除z轴镜像翻转
           
           // 保存原始缩放比例（用于后续碰撞检测优化）
           originalScalesRef.current.set(model, new THREE.Vector3(baseScale, baseScale, baseScale))
@@ -210,11 +210,11 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
           const markerOffset = markerOffsetsRef.current[modelName]
           const z_offset_all = 0.2;
           if (markerOffset) {
-            // 计算标记偏移点位置（注意z轴是翻转的，所以z的偏移需要取反）
+            // 计算标记偏移点位置
             const markerOffsetPoint = new THREE.Vector3(
               model.position.x + markerOffset.x,
               model.position.y + markerOffset.y,
-              model.position.z + markerOffset.z * -1 + z_offset_all // z轴翻转
+              model.position.z + markerOffset.z + z_offset_all // 移除z轴翻转
             )
 
             // 创建绿色点（标记偏移点）
@@ -408,7 +408,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               const originalScale = originalScalesRef.current.get(model)
               if (originalScale) {
                 const newScale = originalScale.x * scaleFactor
-                model.scale.set(newScale, newScale, -newScale)
+                model.scale.set(newScale, newScale, newScale) // 移除z轴镜像翻转
               }
             })
           }
@@ -464,7 +464,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
             // 优化：确保所有模型之间的缩放比例差异不超过1%
             const currentScales: Array<{ model: THREE.Group; scale: number }> = []
             modelsToOptimize.forEach((model) => {
-              // 获取当前缩放值（绝对值，因为z轴是负的）
+              // 获取当前缩放值
               const currentScale = Math.abs(model.scale.x)
               currentScales.push({ model, scale: currentScale })
             })
@@ -484,7 +484,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
                 currentScales.forEach(({ model, scale }) => {
                   if (scale > targetMaxScale) {
                     // 将超出范围的模型缩小到目标最大值
-                    model.scale.set(targetMaxScale, targetMaxScale, -targetMaxScale)
+                    model.scale.set(targetMaxScale, targetMaxScale, targetMaxScale) // 移除z轴镜像翻转
                   }
                 })
 
@@ -495,7 +495,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
                   modelsToOptimize.forEach((model) => {
                     const currentScale = Math.abs(model.scale.x)
                     const newScale = currentScale * safetyScale
-                    model.scale.set(newScale, newScale, -newScale)
+                    model.scale.set(newScale, newScale, newScale) // 移除z轴镜像翻转
                   })
                   
                   // 再次检查并限制比例
@@ -512,7 +512,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
                     modelsToOptimize.forEach((model) => {
                       const scale = Math.abs(model.scale.x)
                       if (scale > finalTargetMax) {
-                        model.scale.set(finalTargetMax, finalTargetMax, -finalTargetMax)
+                        model.scale.set(finalTargetMax, finalTargetMax, finalTargetMax) // 移除z轴镜像翻转
                       }
                     })
                   }

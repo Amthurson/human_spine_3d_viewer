@@ -241,12 +241,37 @@ function sampleHeightFromGrid(heightMapFiltered: Float32Array, x: number, y: num
  * @param rawPoints 原始点云
  * @returns 平滑后的点云
  */
-export const smoothen = ({rawPoints, humanColors}: {rawPoints: Point3D[], humanColors?: { r: number, g: number, b: number }[]}): { smoothed: Point3D[], heightMapFiltered: Float32Array, validMask: Uint8Array, colorMapR: Float32Array, colorMapG: Float32Array, colorMapB: Float32Array, nx: number, ny: number, xMin: number, xMax: number, yMin: number, yMax: number, zMax: number, zMin: number } => {
-    const nx = 128; // 网格分辨率，可视点数多时可改为 256
-    const ny = 128;
-    const radius = 1;               // 邻域半径（3~5）
-    const sigmaSpace = 1.5;         // 空间距离权重
-    const iterations = 1;           // 迭代次数，1~2 一般够
+export const smoothen = ({
+    rawPoints, 
+    humanColors
+}: {
+    rawPoints: Point3D[], 
+    humanColors?: { 
+        r: number, 
+        g: number, 
+        b: number 
+    }[]
+}): { 
+    smoothed: Point3D[], 
+    heightMapFiltered: Float32Array, 
+    validMask: Uint8Array, 
+    colorMapR: Float32Array, 
+    colorMapG: Float32Array, 
+    colorMapB: Float32Array, 
+    nx: number, 
+    ny: number, 
+    xMin: number, 
+    xMax: number, 
+    yMin: number, 
+    yMax: number, 
+    zMax: number, 
+    zMin: number 
+} => {
+    const nx = 279; // 网格分辨率，可视点数多时可改为 256
+    const ny = 279;
+    const radius = 3;               // 邻域半径（3~5）
+    const sigmaSpace = 3.5;         // 空间距离权重
+    const iterations = 2;           // 迭代次数，1~2 一般够
 
     // ======== 4. 构建 2.5D 高度图 height(x, y) ========
     const {heightMap, validMask, colorMapR, colorMapG, colorMapB, widthX, heightY, xMin, xMax, yMin, yMax, N, zMax, zMin} = getHeightMapByRawPoints({rawPoints, humanColors, nx, ny});

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
-import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
+import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { processPointCloud } from '../utils/pointCloudUtils'
 import type { Point3D, TransformParams } from '../utils/pointCloudUtils'
 import PointCloud from './PointCloud'
@@ -179,7 +179,7 @@ export default function ThreeScene() {
   const [highlightedVertebra, setHighlightedVertebra] = useState<string | null>(null)
   const [, setIsDragging] = useState(false)
   const [hoveredModel, setHoveredModel] = useState<THREE.Group | null>(null)
-  const [applyOffset, setApplyOffset] = useState(true) // 是否应用偏移量
+  const [applyOffset, setApplyOffset] = useState(false) // 是否应用偏移量
   // const [showBoxHelpers, setShowBoxHelpers] = useState(false) // 是否显示模型边界框
   const [showMarkers, setShowMarkers] = useState(false) // 是否显示标记和连线
   const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.69) // Y轴允许重合比例，默认20%
@@ -192,6 +192,7 @@ export default function ThreeScene() {
   const vertebraModelsRef = useRef<VertebraModelsRef>(null) // VertebraModels组件的ref
   const modelsRef = useRef<THREE.Group[]>([]) // 保存模型的引用，避免依赖项变化导致重复执行
   const applyOffsetRef = useRef(applyOffset) // 保存applyOffset的引用
+  const hasDataRef = useRef(false) // 保存是否有数据的引用
   const [colorData, setColorData] = useState<{ r: number, g: number, b: number }[]>([])
   // WASM 相关状态
   const [wasmInitialized, setWasmInitialized] = useState(false)
@@ -208,10 +209,29 @@ export default function ThreeScene() {
   const isDraggingLightRef = useRef(false) // 是否正在拖动光源
   const transformControlsRef = useRef<TransformControls | null>(null) // TransformControls引用
   const [skinOpacity, setSkinOpacity] = useState(1)
-  const [showPointCloud, setShowPointCloud] = useState(true)
-  const [showSkin, setShowSkin] = useState(false)
+  const [showPointCloud, setShowPointCloud] = useState(false)
+  const [showSkin, setShowSkin] = useState(true)
   const [pointSize, setPointSize] = useState(0.038)
   const [showOriginalColor, setShowOriginalColor] = useState(true)
+  
+  // 皮肤材质参数
+  const [skinColor, setSkinColor] = useState('#efcdaf')
+  const [skinMetalness, setSkinMetalness] = useState(0.00)
+  const [skinRoughness, setSkinRoughness] = useState(1.00)
+  const [skinTransmission, setSkinTransmission] = useState(0.11)
+  const [skinThickness, setSkinThickness] = useState(0.45)
+  const [skinIor, setSkinIor] = useState(1.56)
+  const [skinClearcoat, setSkinClearcoat] = useState(0.73)
+  const [skinClearcoatRoughness, setSkinClearcoatRoughness] = useState(0.56)
+  const [skinReflectivity, setSkinReflectivity] = useState(0.2)
+  const [skinAttenuationDistance, setSkinAttenuationDistance] = useState(2)
+  const [skinAttenuationColor, setSkinAttenuationColor] = useState('#cc895c')
+  const [skinEnvMapIntensity, setSkinEnvMapIntensity] = useState(1)
+  const [skinSheen, setSkinSheen] = useState(0.27)
+  const [skinSheenColor, setSkinSheenColor] = useState('#fbe9d6')
+  const [skinSheenRoughness, setSkinSheenRoughness] = useState(0.55)
+  const [skinDepthGapRatio, setSkinDepthGapRatio] = useState(0.47)
+  const [useVertexColors, setUseVertexColors] = useState(true)
   // 更新 ref 以保持最新值
   useEffect(() => {
     showMarkersRef.current = showMarkers
@@ -508,6 +528,8 @@ export default function ThreeScene() {
     controls.dampingFactor = 0.05
     // 设置初始控制器目标位置
     controls.target.set(0.64, 1.68, 0.29)
+    // 初始状态：未处理文件前禁用交互
+    controls.enabled = false
     controls.update()
 
     // 射线检测器
@@ -532,32 +554,32 @@ export default function ThreeScene() {
     })
 
     // 添加坐标轴辅助线
-    const axesHelper = new THREE.AxesHelper(1.5)
-    rootGroup.add(axesHelper)
+    // const axesHelper = new THREE.AxesHelper(1.5)
+    // rootGroup.add(axesHelper)
 
     // 添加坐标轴标签
-    const createAxisLabel = (text: string, position: [number, number, number], color: string) => {
-      const div = document.createElement('div')
-      div.textContent = text
-      div.style.color = color
-      div.style.fontSize = '16px'
-      div.style.fontWeight = 'bold'
-      div.style.fontFamily = 'Arial, sans-serif'
-      div.style.pointerEvents = 'none'
-      div.style.userSelect = 'none'
-      div.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)'
+    // const createAxisLabel = (text: string, position: [number, number, number], color: string) => {
+    //   const div = document.createElement('div')
+    //   div.textContent = text
+    //   div.style.color = color
+    //   div.style.fontSize = '16px'
+    //   div.style.fontWeight = 'bold'
+    //   div.style.fontFamily = 'Arial, sans-serif'
+    //   div.style.pointerEvents = 'none'
+    //   div.style.userSelect = 'none'
+    //   div.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)'
 
-      const label = new CSS2DObject(div)
-      label.position.set(...position)
-      return label
-    }
+    //   const label = new CSS2DObject(div)
+    //   label.position.set(...position)
+    //   return label
+    // }
 
-    const xLabel = createAxisLabel('X', [1.8, 0, 0], '#ff0000')
-    rootGroup.add(xLabel)
-    const yLabel = createAxisLabel('Y', [0, 1.8, 0], '#00ff00')
-    rootGroup.add(yLabel)
-    const zLabel = createAxisLabel('Z', [0, 0, 1.8], '#0000ff')
-    rootGroup.add(zLabel)
+    // const xLabel = createAxisLabel('X', [1.8, 0, 0], '#ff0000')
+    // rootGroup.add(xLabel)
+    // const yLabel = createAxisLabel('Y', [0, 1.8, 0], '#00ff00')
+    // rootGroup.add(yLabel)
+    // const zLabel = createAxisLabel('Z', [0, 0, 1.8], '#0000ff')
+    // rootGroup.add(zLabel)
 
     // 添加光源（增强亮度）
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.3) // 从0.5增加到0.8
@@ -657,8 +679,14 @@ export default function ThreeScene() {
     transformControls.addEventListener('dragging-changed', (event) => {
       // 拖动时禁用OrbitControls
       const isDragging = event.value as boolean
-      controls.enabled = !isDragging
       isDraggingLightRef.current = isDragging
+      // 只有在有数据时才允许拖拽，拖拽时禁用 OrbitControls
+      if (isDragging) {
+        controls.enabled = false
+      } else {
+        // 拖拽结束后，根据是否有数据恢复 controls.enabled
+        controls.enabled = hasDataRef.current
+      }
     })
 
     // 监听TransformControls的位置变化
@@ -779,6 +807,9 @@ export default function ThreeScene() {
     let mouseDownPos: { x: number; y: number } | null = null
 
     const handleMouseMove = (event: MouseEvent) => {
+      // 如果没有数据，不处理任何鼠标事件
+      if (!hasDataRef.current) return
+      
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
       raycaster.setFromCamera(mouse, camera)
@@ -883,6 +914,9 @@ export default function ThreeScene() {
     }
 
     const handleMouseDown = (event: MouseEvent) => {
+      // 如果没有数据，不处理任何鼠标事件
+      if (!hasDataRef.current) return
+      
       if (event.button === 0) {
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
@@ -933,6 +967,9 @@ export default function ThreeScene() {
     }
 
     const handleMouseUp = (event: MouseEvent) => {
+      // 如果没有数据，不处理任何鼠标事件
+      if (!hasDataRef.current) return
+      
       if (event.button === 0) {
         canvas.style.cursor = 'grab'
         // 单击不触发标记，只重置状态
@@ -942,6 +979,9 @@ export default function ThreeScene() {
 
     // 双击事件处理（用于标记）
     const handleDoubleClick = (event: MouseEvent) => {
+      // 如果没有数据，不处理任何鼠标事件
+      if (!hasDataRef.current) return
+      
       event.preventDefault()
       if (event.button === 0) {
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1
@@ -1127,11 +1167,10 @@ export default function ThreeScene() {
           
           // 根据当前标记位置计算新的偏移量
           // 偏移量 = 原始spinePoint位置 - 标记位置（反向计算）
-          // 注意：z轴需要翻转，因为模型z轴是镜像的（scale: [0.7, 0.7, -0.7]）
           const actualOffset = {
             x: validSpinePoint.x - position.x,
             y: validSpinePoint.y - position.y,
-            z: (validSpinePoint.z - position.z) * -1, // z轴翻转（因为模型z轴是镜像的）
+            z: validSpinePoint.z - position.z, // 移除z轴翻转
           }
 
           // 更新偏移量缓存
@@ -1442,10 +1481,28 @@ export default function ThreeScene() {
     })
   }, [showLightHelpers])
 
+  // 根据是否有数据来控制3D世界的交互
+  useEffect(() => {
+    if (!sceneRef.current) return
+    
+    const controls = sceneRef.current.controls
+    // 如果有数据（点云或脊柱点），启用交互；否则禁用
+    const hasData = humanPoints.length > 0 || spinePoints.length > 0
+    hasDataRef.current = hasData // 更新 ref
+    
+    // 只有在不拖拽时才更新 controls.enabled
+    // 如果正在拖拽 TransformControls，保持当前状态
+    if (!isDraggingLightRef.current) {
+      controls.enabled = hasData
+    }
+  }, [humanPoints.length, spinePoints.length])
+
   // 当选中光源变化时，更新TransformControls
   useEffect(() => {
     if (transformControlsRef.current) {
-      if (selectedLight) {
+      // 只有在有数据时才允许使用 TransformControls
+      const hasData = humanPoints.length > 0 || spinePoints.length > 0
+      if (selectedLight && hasData) {
         transformControlsRef.current.attach(selectedLight)
         transformControlsRef.current.enabled = true
       } else {
@@ -1453,9 +1510,30 @@ export default function ThreeScene() {
         transformControlsRef.current.enabled = false
       }
     }
-  }, [selectedLight])
+  }, [selectedLight, humanPoints.length, spinePoints.length])
 
   const scene = sceneRef.current?.scene
+
+  // 使用 useMemo 优化皮肤参数对象
+  const skinParams = useMemo(() => ({
+    meshColor: new THREE.Color(skinColor),
+    metalness: skinMetalness,
+    roughness: skinRoughness,
+    transmission: skinTransmission,
+    thickness: skinThickness,
+    ior: skinIor,
+    clearcoat: skinClearcoat,
+    clearcoatRoughness: skinClearcoatRoughness,
+    reflectivity: skinReflectivity,
+    attenuationDistance: skinAttenuationDistance,
+    attenuationColor: new THREE.Color(skinAttenuationColor),
+    envMapIntensity: skinEnvMapIntensity,
+    sheen: skinSheen,
+    sheenColor: new THREE.Color(skinSheenColor),
+    sheenRoughness: skinSheenRoughness,
+    depthGapRatio: skinDepthGapRatio,
+    useVertexColors: useVertexColors,
+  }), [skinColor, skinMetalness, skinRoughness, skinTransmission, skinThickness, skinIor, skinClearcoat, skinClearcoatRoughness, skinReflectivity, skinAttenuationDistance, skinAttenuationColor, skinEnvMapIntensity, skinSheen, skinSheenColor, skinSheenRoughness, skinDepthGapRatio, useVertexColors])
 
   return (
     <>
@@ -1508,6 +1586,40 @@ export default function ThreeScene() {
         onPointSizeChange={setPointSize}
         showOriginalColor={showOriginalColor}
         onShowOriginalColorChange={setShowOriginalColor}
+        skinColor={skinColor}
+        onSkinColorChange={setSkinColor}
+        skinMetalness={skinMetalness}
+        onSkinMetalnessChange={setSkinMetalness}
+        skinRoughness={skinRoughness}
+        onSkinRoughnessChange={setSkinRoughness}
+        skinTransmission={skinTransmission}
+        onSkinTransmissionChange={setSkinTransmission}
+        skinThickness={skinThickness}
+        onSkinThicknessChange={setSkinThickness}
+        skinIor={skinIor}
+        onSkinIorChange={setSkinIor}
+        skinClearcoat={skinClearcoat}
+        onSkinClearcoatChange={setSkinClearcoat}
+        skinClearcoatRoughness={skinClearcoatRoughness}
+        onSkinClearcoatRoughnessChange={setSkinClearcoatRoughness}
+        skinReflectivity={skinReflectivity}
+        onSkinReflectivityChange={setSkinReflectivity}
+        skinAttenuationDistance={skinAttenuationDistance}
+        onSkinAttenuationDistanceChange={setSkinAttenuationDistance}
+        skinAttenuationColor={skinAttenuationColor}
+        onSkinAttenuationColorChange={setSkinAttenuationColor}
+        skinEnvMapIntensity={skinEnvMapIntensity}
+        onSkinEnvMapIntensityChange={setSkinEnvMapIntensity}
+        skinSheen={skinSheen}
+        onSkinSheenChange={setSkinSheen}
+        skinSheenColor={skinSheenColor}
+        onSkinSheenColorChange={setSkinSheenColor}
+        skinSheenRoughness={skinSheenRoughness}
+        onSkinSheenRoughnessChange={setSkinSheenRoughness}
+        skinDepthGapRatio={skinDepthGapRatio}
+        onSkinDepthGapRatioChange={setSkinDepthGapRatio}
+        useVertexColors={useVertexColors}
+        onUseVertexColorsChange={setUseVertexColors}
       />
       {/* Color.png 预览窗口 */}
       <ColorImagePreview imageUrl={colorImageUrl} spinePoints2D={rawSpinePoints2D} />
@@ -1526,7 +1638,20 @@ export default function ThreeScene() {
       )}
       {transformParams && scene && sceneRef.current && (
         <>
-          <PointCloud points={humanPoints} opacity={opacity} skinOpacity={skinOpacity} scene={sceneRef.current.rootGroup} minOffset={minOffset} pointType={pointType} humanColors={colorData} showPointCloud={showPointCloud} showSkin={showSkin} pointSize={pointSize} showOriginalColor={showOriginalColor}/>
+          <PointCloud 
+            points={humanPoints} 
+            opacity={opacity} 
+            skinOpacity={skinOpacity} 
+            scene={sceneRef.current.rootGroup} 
+            minOffset={minOffset} 
+            pointType={pointType} 
+            humanColors={colorData} 
+            showPointCloud={showPointCloud} 
+            showSkin={showSkin} 
+            pointSize={pointSize} 
+            showOriginalColor={showOriginalColor}
+            skinParams={skinParams}
+          />
           <SpinePoints points={spinePoints} transformParams={transformParams} scene={sceneRef.current.rootGroup} />
           <VertebraModels
             ref={vertebraModelsRef}
