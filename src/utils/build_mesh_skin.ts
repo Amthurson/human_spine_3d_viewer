@@ -295,11 +295,24 @@ export const buildHumanPatchMeshFromHeightMap = ({
             if (a < 0 || b < 0 || c < 0 || d < 0) continue;
 
             if (depthGap > 0) {
-            const z00 = heightMap[g00];
-            const zs  = [heightMap[g10], heightMap[g01], heightMap[g11]];
-            let maxDz = 0;
-            for (const z of zs) maxDz = Math.max(maxDz, Math.abs(z - z00));
-            if (maxDz > depthGap) continue;
+                // 检查所有相邻顶点之间的z值差异，而不仅仅是相对于z00的差异
+                // 这样可以避免在边缘区域产生z轴向后延伸的倒刺
+                const z00 = heightMap[g00];
+                const z10 = heightMap[g10];
+                const z01 = heightMap[g01];
+                const z11 = heightMap[g11];
+                
+                // 检查所有相邻顶点之间的z值差异
+                const dz00_10 = Math.abs(z00 - z10);
+                const dz00_01 = Math.abs(z00 - z01);
+                const dz00_11 = Math.abs(z00 - z11);
+                const dz10_01 = Math.abs(z10 - z01);
+                const dz10_11 = Math.abs(z10 - z11);
+                const dz01_11 = Math.abs(z01 - z11);
+                
+                // 如果任意两个相邻顶点之间的z值差异超过depthGap，跳过这个四边形
+                const maxDz = Math.max(dz00_10, dz00_01, dz00_11, dz10_01, dz10_11, dz01_11);
+                if (maxDz > depthGap) continue;
             }
 
             // 确保三角形顺序正确，法线指向外部（朝向观察者）

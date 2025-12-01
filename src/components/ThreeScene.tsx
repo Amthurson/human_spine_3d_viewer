@@ -192,6 +192,9 @@ export default function ThreeScene() {
   const applyOffsetRef = useRef(applyOffset) // 保存applyOffset的引用
   const hasDataRef = useRef(false) // 保存是否有数据的引用
   const hoveredModelRef = useRef<THREE.Group | null>(null) // 保存当前悬停的模型引用
+  const handleModelsLoadedCallIdRef = useRef(0) // 跟踪handleModelsLoaded的调用ID，防止重复调用
+  const optimizeScalesCallIdRef = useRef(0) // 跟踪optimizeScales的调用ID，防止重复调用
+  const isOptimizingRef = useRef(false) // 使用ref跟踪优化状态，比state更及时
   const [colorData, setColorData] = useState<{ r: number, g: number, b: number }[]>([])
   // WASM 相关状态
   const [wasmInitialized, setWasmInitialized] = useState(false)
@@ -707,34 +710,34 @@ export default function ThreeScene() {
     window.addEventListener('resize', handleResize)
 
     // 高亮模型
-    const highlightModel = (model: THREE.Group) => {
-      model.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
+    // const highlightModel = (model: THREE.Group) => {
+    //   model.traverse((child) => {
+    //     if (child instanceof THREE.Mesh && child.material) {
+    //       const materials = Array.isArray(child.material) ? child.material : [child.material]
           
-          // 保存原始材质颜色（如果还没有保存）
-          if (!originalMaterialsRef.current.has(child)) {
-            const original = {
-              colors: materials.map((mat) => 
-                mat instanceof THREE.MeshStandardMaterial ? mat.color.clone() : new THREE.Color()
-              ),
-              emissives: materials.map((mat) => 
-                mat instanceof THREE.MeshStandardMaterial ? mat.emissive.clone() : new THREE.Color()
-              ),
-            }
-            originalMaterialsRef.current.set(child, original)
-          }
+    //       // 保存原始材质颜色（如果还没有保存）
+    //       if (!originalMaterialsRef.current.has(child)) {
+    //         const original = {
+    //           colors: materials.map((mat) => 
+    //             mat instanceof THREE.MeshStandardMaterial ? mat.color.clone() : new THREE.Color()
+    //           ),
+    //           emissives: materials.map((mat) => 
+    //             mat instanceof THREE.MeshStandardMaterial ? mat.emissive.clone() : new THREE.Color()
+    //           ),
+    //         }
+    //         originalMaterialsRef.current.set(child, original)
+    //       }
           
-          // 高亮模型：增加emissive和改变颜色
-          materials.forEach((mat) => {
-            if (mat instanceof THREE.MeshStandardMaterial) {
-              mat.emissive.setHex(0x33aaff) // 蓝色发光
-              mat.emissiveIntensity = 0.5
-            }
-          })
-        }
-      })
-    }
+    //       // 高亮模型：增加emissive和改变颜色
+    //       materials.forEach((mat) => {
+    //         if (mat instanceof THREE.MeshStandardMaterial) {
+    //           mat.emissive.setHex(0x33aaff) // 蓝色发光
+    //           mat.emissiveIntensity = 0.5
+    //         }
+    //       })
+    //     }
+    //   })
+    // }
 
     const handleMouseMove = (event: MouseEvent) => {
       // 如果没有数据，不处理任何鼠标事件
@@ -748,12 +751,15 @@ export default function ThreeScene() {
       const objectsToCheck: THREE.Mesh[] = []
       const meshToModelMap = new Map<THREE.Mesh, THREE.Group>()
       const meshToVertebraNameMap = new Map<THREE.Mesh, string>()
+      
+      // 使用 modelsRef 获取所有已加载的模型，确保只处理真正的模型根节点
+      const allModels = new Set<THREE.Group>(modelsRef.current)
 
-      scene.traverse((object) => {
-        if (object.userData && object.userData.vertebraName) {
-          const vertebraName = object.userData.vertebraName
-          const model = object as THREE.Group
-          object.traverse((child) => {
+      // 遍历所有模型，收集它们的mesh用于射线检测
+      allModels.forEach((model) => {
+        const vertebraName = model.userData?.vertebraName
+        if (vertebraName) {
+          model.traverse((child) => {
             if (child instanceof THREE.Mesh) {
               objectsToCheck.push(child)
               meshToModelMap.set(child, model)
@@ -772,27 +778,28 @@ export default function ThreeScene() {
         const vertebraName = meshToVertebraNameMap.get(mesh)
 
         if (newHoveredModel && vertebraName) {
-          // 如果悬停的模型与之前的不同，需要恢复之前的模型颜色
-          const currentHoveredModel = hoveredModelRef.current
-          if (currentHoveredModel && currentHoveredModel !== newHoveredModel) {
-            restoreModelColor(currentHoveredModel)
-          }
+          // 先恢复所有其他模型的高亮状态
+          allModels.forEach((model) => {
+            if (model !== newHoveredModel) {
+              restoreModelColor(model)
+            }
+          })
           
           // 如果这是新的悬停模型，高亮它
+          const currentHoveredModel = hoveredModelRef.current
           if (currentHoveredModel !== newHoveredModel) {
-            highlightModel(newHoveredModel)
+            // highlightModel(newHoveredModel)
             hoveredModelRef.current = newHoveredModel
             setHighlightedVertebra(vertebraName)
           }
         }
       } else {
-        // 没有悬停在任何模型上，恢复之前悬停的模型颜色
-        const currentHoveredModel = hoveredModelRef.current
-        if (currentHoveredModel) {
-          restoreModelColor(currentHoveredModel)
-          hoveredModelRef.current = null
-          setHighlightedVertebra(null)
-        }
+        // 没有悬停在任何模型上，恢复所有模型的高亮状态
+        allModels.forEach((model) => {
+          restoreModelColor(model)
+        })
+        hoveredModelRef.current = null
+        setHighlightedVertebra(null)
       }
     }
 
@@ -836,8 +843,72 @@ export default function ThreeScene() {
       }
     }
 
+    // 单击事件处理（用于取消选中）
+    const handleClick = (event: MouseEvent) => {
+      // 如果没有数据，不处理任何鼠标事件
+      if (!hasDataRef.current) return
+      
+      // 只处理左键点击
+      if (event.button !== 0) return
+      
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
+      raycaster.setFromCamera(mouse, camera)
+
+      // 检测鼠标点击的脊柱模型
+      const objectsToCheck: THREE.Mesh[] = []
+      const meshToModelMap = new Map<THREE.Mesh, THREE.Group>()
+      const meshToVertebraNameMap = new Map<THREE.Mesh, string>()
+      const allModels = new Set<THREE.Group>(modelsRef.current)
+
+      // 遍历所有模型，收集它们的mesh用于射线检测
+      allModels.forEach((model) => {
+        const vertebraName = model.userData?.vertebraName
+        if (vertebraName) {
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              objectsToCheck.push(child)
+              meshToModelMap.set(child, model)
+              meshToVertebraNameMap.set(child, vertebraName)
+            }
+          })
+        }
+      })
+
+      const intersects = raycaster.intersectObjects(objectsToCheck, false)
+      
+      if (intersects.length > 0) {
+        const intersect = intersects[0]
+        const mesh = intersect.object as THREE.Mesh
+        const clickedModel = meshToModelMap.get(mesh)
+        const vertebraName = meshToVertebraNameMap.get(mesh)
+
+        // 如果点击的是当前已选中的模型，则取消选中
+        if (clickedModel && vertebraName && hoveredModelRef.current === clickedModel) {
+          // 恢复所有模型的高亮状态
+          allModels.forEach((model) => {
+            restoreModelColor(model)
+          })
+          hoveredModelRef.current = null
+          setHighlightedVertebra(null)
+        }
+      } else {
+        // 点击空白区域，取消选中
+        const currentHoveredModel = hoveredModelRef.current
+        if (currentHoveredModel) {
+          // 恢复所有模型的高亮状态
+          allModels.forEach((model) => {
+            restoreModelColor(model)
+          })
+          hoveredModelRef.current = null
+          setHighlightedVertebra(null)
+        }
+      }
+    }
+
     canvas.addEventListener('mousemove', handleMouseMove)
     canvas.addEventListener('dblclick', handleDoubleClick)
+    canvas.addEventListener('click', handleClick)
 
     canvas.addEventListener('mouseleave', () => {
       const currentHoveredModel = hoveredModelRef.current
@@ -851,25 +922,31 @@ export default function ThreeScene() {
     // 恢复模型颜色
     const restoreModelColor = (model: THREE.Group) => {
       model.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material && originalMaterialsRef.current.has(child)) {
-          const original = originalMaterialsRef.current.get(child)!
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat, index) => {
-              if (original.colors[index]) {
-                ;(mat as THREE.MeshStandardMaterial).color.copy(original.colors[index])
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          materials.forEach((mat, index) => {
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              // 如果保存了原始材质，恢复原始颜色和emissive
+              if (originalMaterialsRef.current.has(child)) {
+                const original = originalMaterialsRef.current.get(child)!
+                if (original.colors[index]) {
+                  mat.color.copy(original.colors[index])
+                }
+                if (original.emissives[index]) {
+                  mat.emissive.copy(original.emissives[index])
+                } else {
+                  // 如果没有保存原始emissive，重置为黑色
+                  mat.emissive.setHex(0x000000)
+                }
+              } else {
+                // 如果没有保存原始材质，也要重置emissive（可能是之前被高亮过但没有保存）
+                mat.emissive.setHex(0x000000)
               }
-              if (original.emissives[index]) {
-                ;(mat as THREE.MeshStandardMaterial).emissive.copy(original.emissives[index])
-              }
-            })
-          } else {
-            if (original.colors[0]) {
-              ;(child.material as THREE.MeshStandardMaterial).color.copy(original.colors[0])
+              // 确保emissiveIntensity被重置
+              mat.emissiveIntensity = 1.0
             }
-            if (original.emissives[0]) {
-              ;(child.material as THREE.MeshStandardMaterial).emissive.copy(original.emissives[0])
-            }
-          }
+          })
         }
       })
     }
@@ -979,18 +1056,45 @@ export default function ThreeScene() {
             // 应用偏移到模型位置
             validTargetModel.position.copy(markerOffsetPoint)
             
+            // 更新模型的变换矩阵
+            validTargetModel.updateMatrixWorld(true)
+            
+            // 立即更新BoxHelper以反映位置变化
+            if (validTargetModel.userData.boxHelper) {
+              const boxHelper = validTargetModel.userData.boxHelper as THREE.BoxHelper
+              if (boxHelper) {
+                boxHelper.update()
+              }
+            }
+            
             // 应用偏移后，重新进行碰撞检测和缩放优化
             setTimeout(() => {
-              if (vertebraModelsRef.current) {
+              if (vertebraModelsRef.current && !isOptimizingRef.current) {
+                const optimizeCallId = ++optimizeScalesCallIdRef.current
+                isOptimizingRef.current = true
                 setIsOptimizing(true) // 开始优化
                 vertebraModelsRef.current.optimizeScales(() => {
-                  setIsOptimizing(false) // 优化完成
+                  if (optimizeCallId === optimizeScalesCallIdRef.current) {
+                    isOptimizingRef.current = false
+                    setIsOptimizing(false) // 优化完成
+                  }
                 })
               }
             }, 100)
           } else {
             // 如果不应用偏移，保持模型在原始spinePoint位置
             validTargetModel.position.copy(validSpinePoint)
+            
+            // 更新模型的变换矩阵
+            validTargetModel.updateMatrixWorld(true)
+            
+            // 立即更新BoxHelper以反映位置变化
+            if (validTargetModel.userData.boxHelper) {
+              const boxHelper = validTargetModel.userData.boxHelper as THREE.BoxHelper
+              if (boxHelper) {
+                boxHelper.update()
+              }
+            }
           }
         }
 
@@ -1048,6 +1152,7 @@ export default function ThreeScene() {
       window.removeEventListener('keyup', handleKeyUp)
       canvas.removeEventListener('mousemove', handleMouseMove)
       canvas.removeEventListener('dblclick', handleDoubleClick)
+      canvas.removeEventListener('click', handleClick)
       
       // 清理TransformControls
       if (transformControlsRef.current) {
@@ -1080,6 +1185,31 @@ export default function ThreeScene() {
   // 处理模型加载完成
   const handleModelsLoaded = useCallback(
     (loadedModels: THREE.Group[]) => {
+      // 生成新的调用ID，防止重复调用
+      const callId = ++handleModelsLoadedCallIdRef.current
+      
+      // 检查模型是否有效（防止旧的回调执行）
+      if (!loadedModels || loadedModels.length === 0) {
+        return
+      }
+      
+      // 检查这些模型是否还在场景中（防止旧的回调执行）
+      const modelsStillInScene = loadedModels.some(model => {
+        if (!sceneRef.current) return false
+        let found = false
+        sceneRef.current.scene.traverse((obj) => {
+          if (obj === model || (obj.userData?.vertebraName === model.userData?.vertebraName && obj instanceof THREE.Group)) {
+            found = true
+          }
+        })
+        return found
+      })
+      
+      if (!modelsStillInScene) {
+        // 这些模型已经不在场景中了，忽略这次调用
+        return
+      }
+      
       setModels(loadedModels)
       modelsRef.current = loadedModels // 保存模型引用
       // 保持初始镜头位置，不自动调整相机
@@ -1103,21 +1233,51 @@ export default function ThreeScene() {
                 spinePoint.z + offset.z * -1 + z_offset_all // z轴翻转
               )
               model.position.copy(markerOffsetPoint)
+              
+              // 更新模型的变换矩阵
+              model.updateMatrixWorld(true)
+              
+              // 立即更新BoxHelper以反映位置变化
+              if (model.userData.boxHelper) {
+                const boxHelper = model.userData.boxHelper as THREE.BoxHelper
+                if (boxHelper) {
+                  boxHelper.update()
+                }
+              }
             }
           }
         })
       }
       
-        // 第二步：等待位置调整完成，然后进行碰撞检测和缩放优化
-        // 无论是否应用偏移，都需要进行碰撞检测和缩放优化
-        setTimeout(() => {
-          if (vertebraModelsRef.current) {
-            setIsOptimizing(true) // 开始优化
-            vertebraModelsRef.current.optimizeScales(() => {
+      // 第二步：等待位置调整完成，然后进行碰撞检测和缩放优化
+      // 无论是否应用偏移，都需要进行碰撞检测和缩放优化
+      setTimeout(() => {
+        // 再次检查调用ID，确保这是最新的调用
+        if (callId !== handleModelsLoadedCallIdRef.current) {
+          // 这不是最新的调用，忽略
+          return
+        }
+        
+        // 检查是否已经有优化在进行中（使用ref，比state更及时）
+        if (isOptimizingRef.current) {
+          // 已经有优化在进行中，忽略这次调用
+          return
+        }
+        
+        if (vertebraModelsRef.current) {
+          // 生成新的优化调用ID
+          const optimizeCallId = ++optimizeScalesCallIdRef.current
+          isOptimizingRef.current = true
+          setIsOptimizing(true) // 开始优化
+          vertebraModelsRef.current.optimizeScales(() => {
+            // 检查这是否是最新的优化调用
+            if (optimizeCallId === optimizeScalesCallIdRef.current) {
+              isOptimizingRef.current = false
               setIsOptimizing(false) // 优化完成
-            })
-          }
-        }, 10) // 延迟确保位置调整完成
+            }
+          })
+        }
+      }, 10) // 延迟确保位置调整完成
 
       // 从缓存恢复标记位置（使用当前的 markers 状态）
       // 注意：这里需要延迟执行，确保 markers 状态已经更新
@@ -1203,10 +1363,15 @@ export default function ThreeScene() {
 
     // 设置防抖定时器，延迟 1 秒后执行优化
     const debounceTimer = setTimeout(() => {
-      if (vertebraModelsRef.current) {
+      if (vertebraModelsRef.current && !isOptimizingRef.current) {
+        const optimizeCallId = ++optimizeScalesCallIdRef.current
+        isOptimizingRef.current = true
         setIsOptimizing(true) // 开始优化
         vertebraModelsRef.current.optimizeScales(() => {
-          setIsOptimizing(false) // 优化完成
+          if (optimizeCallId === optimizeScalesCallIdRef.current) {
+            isOptimizingRef.current = false
+            setIsOptimizing(false) // 优化完成
+          }
         })
       }
     }, 1000) // 1秒延迟

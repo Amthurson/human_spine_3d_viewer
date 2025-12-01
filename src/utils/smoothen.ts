@@ -253,8 +253,8 @@ function sampleHeightFromGrid(heightMapFiltered: Float32Array, x: number, y: num
 export const smoothen = ({
     rawPoints, 
     humanColors,
-    nx = 279, // 网格分辨率，可视点数多时可改为 256
-    ny = 279, // 网格分辨率，可视点数多时可改为 256
+    nx = 256, // 网格分辨率，可视点数多时可改为 256
+    ny = 256, // 网格分辨率，可视点数多时可改为 256
     radius = 3, // 邻域半径（3~5）  
     sigmaSpace = 3.5, // 空间距离权重
     iterations = 2, // 迭代次数，1~2 一般够

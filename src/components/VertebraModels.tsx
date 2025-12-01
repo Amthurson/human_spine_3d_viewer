@@ -40,14 +40,100 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
   const originalScalesRef = useRef<Map<THREE.Group, THREE.Vector3>>(new Map())
   const modelsRef = useRef<THREE.Group[]>([]) // 保存所有模型的引用
   const markerOffsetsRef = useRef(markerOffsets) // 保存markerOffsets的引用，避免触发重新加载
+  const cleanupInProgressRef = useRef(false) // 标记清理是否正在进行
+  const onModelsLoadedRef = useRef(onModelsLoaded) // 保存onModelsLoaded的引用，避免触发重新加载
+  const currentLoadIdRef = useRef(0) // 当前加载操作的ID，用于防止竞态条件
 
-  // 更新markerOffsets的引用
+  // 更新markerOffsets和onModelsLoaded的引用
   useEffect(() => {
     markerOffsetsRef.current = markerOffsets
-  }, [markerOffsets])
+    onModelsLoadedRef.current = onModelsLoaded
+  }, [markerOffsets, onModelsLoaded])
 
   useEffect(() => {
-    if (!spinePoints || spinePoints.length === 0) return
+    if (!spinePoints || spinePoints.length === 0) {
+      // 如果没有脊柱点，清理所有模型
+      if (vertebraGroupRef.current) {
+        cleanupInProgressRef.current = true
+        const oldGroup = vertebraGroupRef.current
+        const oldModels = [...modelsRef.current]
+        
+        // 清理所有模型相关的对象
+        const objectsToRemove: THREE.Object3D[] = []
+        const vertebraNamesToClean = new Set<string>()
+
+        const vertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
+        if (vertebraGroup) {
+          scene.remove(vertebraGroup)
+        }
+        
+        oldModels.forEach((model) => {
+          if (model.userData && model.userData.vertebraName) {
+            vertebraNamesToClean.add(model.userData.vertebraName)
+          }
+        })
+        
+        scene.traverse((child) => {
+          if (child.userData && child.userData.vertebraName) {
+            const vertebraName = child.userData.vertebraName
+            if (vertebraNamesToClean.has(vertebraName)) {
+              if (child.userData.isBoxHelper && child instanceof THREE.BoxHelper) {
+                objectsToRemove.push(child)
+              }
+              if (child.userData.isMarkerOffsetHelper && child instanceof THREE.Mesh) {
+                objectsToRemove.push(child)
+              }
+              if (child.userData.isMarkerOffsetLine && child instanceof THREE.Line) {
+                objectsToRemove.push(child)
+              }
+            }
+          }
+        })
+        
+        objectsToRemove.forEach((obj) => {
+          scene.remove(obj)
+          if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.BoxHelper) {
+            if (obj.geometry) obj.geometry.dispose()
+            if (obj.material) {
+              if (Array.isArray(obj.material)) {
+                obj.material.forEach((mat) => mat.dispose())
+              } else {
+                obj.material.dispose()
+              }
+            }
+          }
+        })
+        
+        if (oldGroup) {
+          scene.remove(oldGroup)
+          oldGroup.children.forEach((child) => {
+            if (child instanceof THREE.Group) {
+              originalScalesRef.current.delete(child)
+              child.traverse((obj) => {
+                if (obj instanceof THREE.Mesh) {
+                  obj.geometry.dispose()
+                  if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                      obj.material.forEach((mat) => mat.dispose())
+                    } else {
+                      obj.material.dispose()
+                    }
+                  }
+                }
+              })
+            }
+          })
+          vertebraGroupRef.current = null
+        }
+        
+        modelsRef.current = []
+        hasLoadedRef.current = false
+        loadingRef.current = false
+        currentLoadIdRef.current++ // 使所有正在进行的加载操作失效
+        cleanupInProgressRef.current = false
+      }
+      return
+    }
     
     // 保存当前ref的引用，用于清理函数
     const scalesMap = originalScalesRef.current
@@ -55,6 +141,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     // 当 reloadKey 改变时，先清理旧的模型，然后重置加载状态以触发重新加载
     if (reloadKey !== prevReloadKeyRef.current) {
       // 先清理旧的模型和所有相关对象
+      cleanupInProgressRef.current = true
       const oldGroup = vertebraGroupRef.current
       const oldModels = [...modelsRef.current]
       
@@ -132,13 +219,20 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       }
       
       hasLoadedRef.current = false
+      loadingRef.current = false
       prevReloadKeyRef.current = reloadKey
       // 清理旧的原始缩放记录
       scalesMap.clear()
+      // 增加加载ID，使所有正在进行的加载操作失效
+      currentLoadIdRef.current++
+      cleanupInProgressRef.current = false
     }
     
-    if (hasLoadedRef.current || loadingRef.current) return
+    // 如果正在清理或已经加载或正在加载，则返回
+    if (cleanupInProgressRef.current || hasLoadedRef.current || loadingRef.current) return
 
+    // 生成新的加载ID，用于防止竞态条件
+    const loadId = ++currentLoadIdRef.current
     loadingRef.current = true
     const loader = createGLTFLoader()
     const vertebraGroup = new THREE.Group()
@@ -156,7 +250,6 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     transformedPoints.forEach((point, index) => {
       const modelName = VERTEBRA_NAMES[index]
       const modelPath = `/models/${modelName}.glb`
-      loadingRef.current = true
 
       loadModel(loader, modelPath, {
         position: [point.x, point.y, point.z],
@@ -171,6 +264,24 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
         },
       })
         .then((model) => {
+          // 检查加载ID是否匹配，如果不匹配说明这是旧的加载操作，应该忽略
+          if (loadId !== currentLoadIdRef.current) {
+            // 这是旧的加载操作，清理模型并返回
+            scene.remove(model)
+            model.traverse((obj) => {
+              if (obj instanceof THREE.Mesh) {
+                obj.geometry.dispose()
+                if (obj.material) {
+                  if (Array.isArray(obj.material)) {
+                    obj.material.forEach((mat) => mat.dispose())
+                  } else {
+                    obj.material.dispose()
+                  }
+                }
+              }
+            })
+            return
+          }
           // 计算模型边界框以确定初始缩放
           const box = new THREE.Box3().setFromObject(model);
           const size = new THREE.Vector3();
@@ -242,25 +353,123 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
             // model.position.copy(markerOffsetPoint)
           }
 
-          // 创建绿色边界框
-          const boxHelper = new THREE.BoxHelper(model, 0x00ff00)
-          boxHelper.userData.isBoxHelper = true
-          boxHelper.userData.vertebraName = modelName
-          boxHelper.visible = showBoxHelpers
-          scene.add(boxHelper)
-          
-          // 将BoxHelper引用保存到模型的userData中，方便后续更新
-          model.userData.boxHelper = boxHelper
-
+          // 先将模型添加到组中
           vertebraGroup.add(model)
           models.push(model)
           modelsRef.current = models // 保存模型引用
           loadedCount++
+          
           if (loadedCount === totalCount) {
+            // 再次检查加载ID是否匹配，确保这是最新的加载操作
+            if (loadId !== currentLoadIdRef.current) {
+              // 这是旧的加载操作，清理所有模型并返回
+              scene.remove(vertebraGroup)
+              models.forEach((model) => {
+                model.traverse((obj) => {
+                  if (obj instanceof THREE.Mesh) {
+                    obj.geometry.dispose()
+                    if (obj.material) {
+                      if (Array.isArray(obj.material)) {
+                        obj.material.forEach((mat) => mat.dispose())
+                      } else {
+                        obj.material.dispose()
+                      }
+                    }
+                  }
+                })
+              })
+              return
+            }
+            
+            // 所有模型加载完成，先将vertebraGroup添加到scene
+            // 但在此之前，先清理场景中可能存在的旧的vertebraGroup
+            const existingVertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
+            if (existingVertebraGroup && existingVertebraGroup !== vertebraGroup) {
+              scene.remove(existingVertebraGroup)
+              existingVertebraGroup.traverse((obj) => {
+                if (obj instanceof THREE.Mesh) {
+                  obj.geometry.dispose()
+                  if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                      obj.material.forEach((mat) => mat.dispose())
+                    } else {
+                      obj.material.dispose()
+                    }
+                  }
+                }
+              })
+            }
+            
             scene.add(vertebraGroup)
             
-            if (onModelsLoaded) {
-              onModelsLoaded(models)
+            // 更新整个场景的变换矩阵
+            scene.updateMatrixWorld(true)
+            
+            // 现在为每个模型创建BoxHelper（此时vertebraGroup已经在scene中）
+            models.forEach((modelToBox) => {
+              const vertebraNameForBox = modelToBox.userData?.vertebraName
+              if (!vertebraNameForBox) return
+              
+              // 先检查并清理已存在的BoxHelper（避免重复创建）
+              if (modelToBox.userData.boxHelper) {
+                const existingBoxHelper = modelToBox.userData.boxHelper as THREE.BoxHelper
+                if (existingBoxHelper.parent) {
+                  existingBoxHelper.parent.remove(existingBoxHelper)
+                }
+                if (existingBoxHelper.geometry) existingBoxHelper.geometry.dispose()
+                if (existingBoxHelper.material) {
+                  if (Array.isArray(existingBoxHelper.material)) {
+                    existingBoxHelper.material.forEach((mat) => mat.dispose())
+                  } else {
+                    existingBoxHelper.material.dispose()
+                  }
+                }
+                modelToBox.userData.boxHelper = null
+              }
+              
+              // 检查场景中是否已有同名的BoxHelper，如果有则删除
+              const existingBoxHelpers: THREE.BoxHelper[] = []
+              scene.traverse((child) => {
+                if (child.userData.isBoxHelper && 
+                    child.userData.vertebraName === vertebraNameForBox && 
+                    child instanceof THREE.BoxHelper) {
+                  existingBoxHelpers.push(child)
+                }
+              })
+              existingBoxHelpers.forEach((helper) => {
+                if (helper.parent) {
+                  helper.parent.remove(helper)
+                }
+                if (helper.geometry) helper.geometry.dispose()
+                if (helper.material) {
+                  if (Array.isArray(helper.material)) {
+                    helper.material.forEach((mat) => mat.dispose())
+                  } else {
+                    helper.material.dispose()
+                  }
+                }
+              })
+              
+              // 更新模型的变换矩阵（确保vertebraGroup已经在scene中）
+              modelToBox.updateMatrixWorld(true)
+              
+              // 创建绿色边界框（此时vertebraGroup已经在scene中，可以正确计算世界变换矩阵）
+              const boxHelper = new THREE.BoxHelper(modelToBox, 0x00ff00)
+              boxHelper.userData.isBoxHelper = true
+              boxHelper.userData.vertebraName = vertebraNameForBox
+              boxHelper.visible = showBoxHelpers
+              scene.add(boxHelper)
+              
+              // 将BoxHelper引用保存到模型的userData中，方便后续更新
+              modelToBox.userData.boxHelper = boxHelper
+              
+              // 立即更新BoxHelper以确保位置和大小正确（包括x轴位置）
+              boxHelper.update()
+            })
+            
+            // 最后一次检查加载ID，确保这是最新的加载操作
+            if (loadId === currentLoadIdRef.current && onModelsLoadedRef.current) {
+              onModelsLoadedRef.current(models)
             }
             hasLoadedRef.current = true
             loadingRef.current = false
@@ -276,6 +485,12 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     })
 
     return () => {
+      // 标记清理正在进行，防止新的加载开始
+      cleanupInProgressRef.current = true
+      
+      // 增加加载ID，使所有正在进行的加载操作失效
+      currentLoadIdRef.current++
+      
       // 清理旧的模型组和所有相关对象
       const oldGroup = vertebraGroupRef.current
       // 保存当前模型列表的副本，避免在清理过程中被修改
@@ -291,7 +506,25 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
         }
       })
       
-      // 遍历场景，收集所有需要清理的对象
+      // 遍历场景，收集所有需要清理的对象（包括BoxHelper）
+      scene.traverse((child) => {
+        if (child.userData && child.userData.vertebraName) {
+          const vertebraName = child.userData.vertebraName
+          if (vertebraNamesToClean.has(vertebraName)) {
+            if (child.userData.isBoxHelper && child instanceof THREE.BoxHelper) {
+              objectsToRemove.push(child)
+            }
+            if (child.userData.isMarkerOffsetHelper && child instanceof THREE.Mesh) {
+              objectsToRemove.push(child)
+            }
+            if (child.userData.isMarkerOffsetLine && child instanceof THREE.Line) {
+              objectsToRemove.push(child)
+            }
+          }
+        }
+      })
+      
+      // 清理vertebraGroup
       const historyVertebraGroup = scene.children.find((child) => child.userData.isVertebraGroup)
       if (historyVertebraGroup) {
         objectsToRemove.push(historyVertebraGroup)
@@ -342,8 +575,13 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
       modelsRef.current = []
       hasLoadedRef.current = false
       loadingRef.current = false
+      
+      // 清理完成，允许新的加载
+      cleanupInProgressRef.current = false
+      
+      // 注意：currentLoadId 已经在清理函数开始时增加了，使所有正在进行的加载操作失效
     }
-  }, [spinePoints, transformParams, scene, showBoxHelpers, showMarkers, reloadKey, onModelsLoaded, allowedYOverlapRatio])
+  }, [spinePoints, transformParams, scene, showBoxHelpers, showMarkers, reloadKey, allowedYOverlapRatio])
 
   // 控制box helper和绿色标记偏移点/连线的显示/隐藏
   useEffect(() => {
@@ -358,12 +596,37 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
   }, [showBoxHelpers, showMarkers, scene])
 
   // 暴露优化函数给父组件
+  const optimizingRef = useRef(false) // 跟踪优化是否正在进行中
+  const optimizeCallIdRef = useRef(0) // 跟踪优化调用的ID
+  
   useImperativeHandle(ref, () => ({
     optimizeScales: (onComplete?: () => void) => {
+      // 如果已经在优化中，忽略这次调用
+      if (optimizingRef.current) {
+        if (onComplete) {
+          // 如果已经有优化在进行，等待当前优化完成
+          // 但这里我们不等待，直接忽略，因为新的优化会覆盖旧的
+          setTimeout(() => onComplete(), 100)
+        }
+        return
+      }
+      
       const models = modelsRef.current
       if (models.length > 0) {
+        // 生成新的优化调用ID
+        const callId = ++optimizeCallIdRef.current
+        optimizingRef.current = true
+        
         // 重新进行碰撞检测和缩放优化
         setTimeout(() => {
+          // 再次检查调用ID，确保这是最新的调用
+          if (callId !== optimizeCallIdRef.current) {
+            optimizingRef.current = false
+            if (onComplete) {
+              setTimeout(() => onComplete(), 100)
+            }
+            return
+          }
           // 需要重新定义优化函数，因为它依赖于allowedYOverlapRatio
           const checkCollision = (model1: THREE.Group, model2: THREE.Group): boolean => {
             const box1 = new THREE.Box3().setFromObject(model1)
@@ -409,26 +672,53 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               if (originalScale) {
                 const newScale = originalScale.x * scaleFactor
                 model.scale.set(newScale, newScale, newScale) // 移除z轴镜像翻转
+                
+                // 更新模型的变换矩阵，确保BoxHelper能正确更新
+                model.updateMatrixWorld(true)
+                
+                // 更新BoxHelper
+                if (model.userData.boxHelper) {
+                  const boxHelper = model.userData.boxHelper as THREE.BoxHelper
+                  if (boxHelper) {
+                    boxHelper.update()
+                  }
+                }
               }
             })
           }
 
           const optimizeModelScales = (modelsToOptimize: THREE.Group[]) => {
+            // 检查调用ID，确保这是最新的优化调用
+            if (callId !== optimizeCallIdRef.current) {
+              optimizingRef.current = false
+              if (onComplete) {
+                setTimeout(() => onComplete(), 100)
+              }
+              return
+            }
+            
             if (modelsToOptimize.length === 0) {
               // 如果没有模型，直接调用完成回调
-              if (onComplete) {
-                setTimeout(() => onComplete(), 100) // 延迟一点确保状态稳定
+              if (callId === optimizeCallIdRef.current) {
+                optimizingRef.current = false
+                if (onComplete) {
+                  setTimeout(() => onComplete(), 100) // 延迟一点确保状态稳定
+                }
               }
               return
             }
 
             if (!hasAnyCollision(modelsToOptimize)) {
-              modelsToOptimize.forEach((model) => {
-                model.userData.collisionOptimized = true
-              })
-              // 优化完成，调用回调
-              if (onComplete) {
-                setTimeout(() => onComplete(), 100) // 延迟一点确保状态稳定
+              // 检查调用ID，确保这是最新的优化调用
+              if (callId === optimizeCallIdRef.current) {
+                modelsToOptimize.forEach((model) => {
+                  model.userData.collisionOptimized = true
+                })
+                optimizingRef.current = false
+                // 优化完成，调用回调
+                if (onComplete) {
+                  setTimeout(() => onComplete(), 100) // 延迟一点确保状态稳定
+                }
               }
               return
             }
@@ -520,14 +810,56 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               }
             }
 
-            // 标记为已优化，但保持当前位置（偏移后的位置）
+            // 标记为已优化，并将模型位置重新校正到spinePoint位置
             modelsToOptimize.forEach((model) => {
               model.userData.collisionOptimized = true
+              
+              // 将模型位置重新校正到原始的spinePoint位置
+              if (model.userData.spinePoint) {
+                const spinePoint = model.userData.spinePoint as THREE.Vector3
+                model.position.copy(spinePoint)
+              }
+              
+              // 更新模型的变换矩阵，确保BoxHelper能正确更新
+              model.updateMatrixWorld(true)
+              
+              // 重新创建BoxHelper以确保位置和大小完全正确（特别是x轴位置）
+              if (model.userData.boxHelper) {
+                const oldBoxHelper = model.userData.boxHelper as THREE.BoxHelper
+                // 删除旧的BoxHelper
+                if (oldBoxHelper.parent) {
+                  oldBoxHelper.parent.remove(oldBoxHelper)
+                }
+                if (oldBoxHelper.geometry) oldBoxHelper.geometry.dispose()
+                if (oldBoxHelper.material) {
+                  if (Array.isArray(oldBoxHelper.material)) {
+                    oldBoxHelper.material.forEach((mat) => mat.dispose())
+                  } else {
+                    oldBoxHelper.material.dispose()
+                  }
+                }
+              }
+              
+              // 创建新的BoxHelper（此时模型的位置和缩放已经确定）
+              const vertebraName = model.userData?.vertebraName
+              if (vertebraName) {
+                const boxHelper = new THREE.BoxHelper(model, 0x00ff00)
+                boxHelper.userData.isBoxHelper = true
+                boxHelper.userData.vertebraName = vertebraName
+                boxHelper.visible = showBoxHelpers
+                scene.add(boxHelper)
+                model.userData.boxHelper = boxHelper
+                boxHelper.update()
+              }
             })
 
             // 优化完成，延迟一点确保状态稳定后调用回调
-            if (onComplete) {
-              setTimeout(() => onComplete(), 200) // 延迟200ms确保状态稳定
+            // 再次检查调用ID，确保这是最新的优化调用
+            if (callId === optimizeCallIdRef.current) {
+              optimizingRef.current = false
+              if (onComplete) {
+                setTimeout(() => onComplete(), 200) // 延迟200ms确保状态稳定
+              }
             }
           }
 
@@ -535,6 +867,7 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
         }, 50)
       } else {
         // 如果没有模型，直接调用完成回调
+        optimizingRef.current = false
         if (onComplete) {
           setTimeout(() => onComplete(), 100)
         }
