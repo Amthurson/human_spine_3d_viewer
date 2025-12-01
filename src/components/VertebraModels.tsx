@@ -461,61 +461,61 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
               applyScaleToModels(modelsToOptimize, bestScale)
             }
 
-            // 优化：确保所有模型之间的缩放比例差异不超过1%
-            const currentScales: Array<{ model: THREE.Group; scale: number }> = []
+            // 确保所有模型相对于原始大小的缩放比例完全一致
+            // 计算所有模型相对于原始缩放的最小比例
+            const relativeScales: Array<{ model: THREE.Group; relativeScale: number }> = []
             modelsToOptimize.forEach((model) => {
-              // 获取当前缩放值
-              const currentScale = Math.abs(model.scale.x)
-              currentScales.push({ model, scale: currentScale })
+              const originalScale = originalScalesRef.current.get(model)
+              if (originalScale) {
+                const currentScale = Math.abs(model.scale.x)
+                const relativeScale = currentScale / originalScale.x
+                relativeScales.push({ model, relativeScale })
+              }
             })
 
-            if (currentScales.length > 0) {
-              const scales = currentScales.map(item => item.scale)
-              const minScale = Math.min(...scales)
-              const maxScale = Math.max(...scales)
-              const scaleRatio = maxScale / minScale
+            if (relativeScales.length > 0) {
+              // 找到最小的相对缩放比例（相对于原始大小）
+              const minRelativeScale = Math.min(...relativeScales.map(item => item.relativeScale))
+              
+              // 将所有模型统一调整到最小的相对缩放比例
+              // 这样所有模型相对于原始大小的缩放比例就完全一致了
+              relativeScales.forEach(({ model, relativeScale }) => {
+                if (relativeScale > minRelativeScale) {
+                  const originalScale = originalScalesRef.current.get(model)
+                  if (originalScale) {
+                    const newScale = originalScale.x * minRelativeScale
+                    model.scale.set(newScale, newScale, newScale)
+                  }
+                }
+              })
 
-              // 如果最大最小比例超过1%（即比例 > 1.01），则统一调整
-              if (scaleRatio > 1.01) {
-                // 计算目标范围：以最小值为基准，最大值不超过最小值的1.01倍
-                const targetMaxScale = minScale * 1.01
-                
-                // 将所有超出范围的模型调整到目标范围内
-                currentScales.forEach(({ model, scale }) => {
-                  if (scale > targetMaxScale) {
-                    // 将超出范围的模型缩小到目标最大值
-                    model.scale.set(targetMaxScale, targetMaxScale, targetMaxScale) // 移除z轴镜像翻转
+              // 如果统一调整后仍有碰撞，则进一步缩小所有模型（保持相对比例一致）
+              if (hasAnyCollision(modelsToOptimize)) {
+                const safetyScale = 0.99
+                modelsToOptimize.forEach((model) => {
+                  const originalScale = originalScalesRef.current.get(model)
+                  if (originalScale) {
+                    const currentRelativeScale = Math.abs(model.scale.x) / originalScale.x
+                    const newRelativeScale = currentRelativeScale * safetyScale
+                    const newScale = originalScale.x * newRelativeScale
+                    model.scale.set(newScale, newScale, newScale)
                   }
                 })
-
-                // 重新检查碰撞，如果调整后仍有碰撞，则进一步缩小所有模型
-                if (hasAnyCollision(modelsToOptimize)) {
-                  // 进一步缩小所有模型，确保无碰撞
-                  const safetyScale = 0.99
+                
+                // 再次检查碰撞，如果还有碰撞则继续缩小
+                let iterationCount = 0
+                const maxSafetyIterations = 10
+                while (hasAnyCollision(modelsToOptimize) && iterationCount < maxSafetyIterations) {
+                  iterationCount++
                   modelsToOptimize.forEach((model) => {
-                    const currentScale = Math.abs(model.scale.x)
-                    const newScale = currentScale * safetyScale
-                    model.scale.set(newScale, newScale, newScale) // 移除z轴镜像翻转
+                    const originalScale = originalScalesRef.current.get(model)
+                    if (originalScale) {
+                      const currentRelativeScale = Math.abs(model.scale.x) / originalScale.x
+                      const newRelativeScale = currentRelativeScale * 0.99
+                      const newScale = originalScale.x * newRelativeScale
+                      model.scale.set(newScale, newScale, newScale)
+                    }
                   })
-                  
-                  // 再次检查并限制比例
-                  let finalMinScale = Infinity
-                  let finalMaxScale = 0
-                  modelsToOptimize.forEach((model) => {
-                    const scale = Math.abs(model.scale.x)
-                    finalMinScale = Math.min(finalMinScale, scale)
-                    finalMaxScale = Math.max(finalMaxScale, scale)
-                  })
-                  
-                  if (finalMaxScale / finalMinScale > 1.01) {
-                    const finalTargetMax = finalMinScale * 1.01
-                    modelsToOptimize.forEach((model) => {
-                      const scale = Math.abs(model.scale.x)
-                      if (scale > finalTargetMax) {
-                        model.scale.set(finalTargetMax, finalTargetMax, finalTargetMax) // 移除z轴镜像翻转
-                      }
-                    })
-                  }
                 }
               }
             }

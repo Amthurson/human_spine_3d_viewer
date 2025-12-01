@@ -79,6 +79,10 @@ interface SidebarProps {
   onSkinDepthGapRatioChange: (value: number) => void
   useVertexColors: boolean
   onUseVertexColorsChange: (value: boolean) => void
+  isSmoothed: boolean
+  onIsSmoothedChange: (value: boolean) => void
+  isSmoothedSkin: boolean
+  onIsSmoothedSkinChange: (value: boolean) => void
 }
 
 export default function Sidebar({
@@ -114,8 +118,8 @@ export default function Sidebar({
   onShowOriginalColorChange,
   useVertexColors,
   onUseVertexColorsChange,
-  // skinColor,
-  // onSkinColorChange,
+  skinColor,
+  onSkinColorChange,
   // skinMetalness,
   // onSkinMetalnessChange,
   // skinRoughness,
@@ -148,6 +152,10 @@ export default function Sidebar({
   // onSkinDepthGapRatioChange,
   pointType,
   onPointTypeChange,
+  isSmoothed,
+  onIsSmoothedChange,
+  isSmoothedSkin,
+  onIsSmoothedSkinChange,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [allowedYOverlapRatioValue, setAllowedYOverlapRatioValue] = useState(allowedYOverlapRatio)
@@ -157,13 +165,13 @@ export default function Sidebar({
 
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-      <button
+      <div
         className="sidebar-toggle"
         onClick={() => setIsCollapsed(!isCollapsed)}
         title={isCollapsed ? '展开' : '收起'}
       >
         {isCollapsed ? '▶' : '◀'}
-      </button>
+      </div>
       
       {!isCollapsed && (
         <div className="sidebar-content" style={{ position: 'relative' }}>
@@ -262,7 +270,7 @@ export default function Sidebar({
                 id="point-size-slider"
                 type="range"
                 min="0.001"
-                max="0.1"
+                max="1"
                 value={pointSize}
                 step="0.001"
                 onChange={(e) => onPointSizeChange(parseFloat(e.target.value))}
@@ -300,6 +308,16 @@ export default function Sidebar({
                     disabled={isOptimizing}
                   />
                   <span>灰色</span>
+                </label>
+              </div>
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isSmoothed}
+                    onChange={(e) => onIsSmoothedChange(e.target.checked)}
+                  />
+                  <span>平滑点云</span>
                 </label>
               </div>
             </div>
@@ -362,6 +380,16 @@ export default function Sidebar({
                   <span>显示皮肤</span>
                 </label>
               </div>
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isSmoothedSkin}
+                    onChange={(e) => onIsSmoothedSkinChange(e.target.checked)}
+                  />
+                  <span>平滑皮肤</span>
+                </label>
+              </div>
               <label htmlFor="skin-opacity-slider">
                 皮肤透明度: {Math.round(skinOpacity * 100)}%
               </label>
@@ -386,8 +414,8 @@ export default function Sidebar({
                   <span>使用照片原色</span>
                 </label>
               </div>
-              {/* <label htmlFor="skin-color-picker">皮肤颜色:</label> */}
-              {/* <input
+              <label htmlFor="skin-color-picker">皮肤颜色:</label>
+              <input
                 id="skin-color-picker"
                 type="color"
                 value={skinColor}
@@ -396,7 +424,7 @@ export default function Sidebar({
                 style={{ width: '100%', height: '30px' }}
               />
               
-              <label htmlFor="skin-metalness-slider">
+              {/* <label htmlFor="skin-metalness-slider">
                 金属度: {skinMetalness.toFixed(2)}
               </label>
               <input

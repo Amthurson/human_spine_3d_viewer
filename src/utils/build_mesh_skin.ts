@@ -62,6 +62,54 @@ function sampleColorFromGrid(x: number, y: number, colorMapR: Float32Array, colo
     return result;
 }
 
+/**
+ * 平滑高度图边缘，使用双边滤波算法
+ * @param heightMap 高度图
+ * @param validMask 有效掩码
+ * @param nx 网格分辨率
+ * @param ny 网格分辨率
+ * @param iterations 迭代次数
+ * @returns 平滑后的高度图
+ */
+export function smoothHeightMapEdge(
+  heightMap: Float32Array | ArrayLike<number>,
+  validMask: Uint8Array,
+  nx: number,
+  ny: number,
+  iterations = 3
+): Float32Array {
+  const heightMapArray = Array.from(heightMap);
+  const validMaskArray = Array.from(validMask);
+  const idx = (x: number, y: number) => y * nx + x;
+
+  for (let it = 0; it < iterations; it++) {
+    const copy = new Float32Array(heightMapArray);
+    for (let y = 1; y < ny - 1; y++) {
+      for (let x = 1; x < nx - 1; x++) {
+        const k = idx(x, y);
+        if (!validMaskArray[k]) continue;
+
+        // 只对“接近边界”的点平滑：周围存在 invalid 就算边界
+        const neighbors = [
+          idx(x - 1, y), idx(x + 1, y),
+          idx(x, y - 1), idx(x, y + 1),
+        ];
+        let hasInvalid = false;
+        for (const n of neighbors) if (!validMaskArray[n]) { hasInvalid = true; break; }
+        if (!hasInvalid) continue;
+
+        let sum = 0, cnt = 0;
+        for (const n of neighbors) {
+          if (!validMaskArray[n]) continue;
+          sum += copy[n];
+          cnt++;
+        }
+        if (cnt > 0) heightMapArray[k] = (copy[k] * 0.5 + sum / cnt * 0.5);
+      }
+    }
+  }
+  return new Float32Array(heightMapArray);
+}
 
 export interface SkinMaterialParams {
     meshColor?: THREE.Color,
@@ -83,6 +131,11 @@ export interface SkinMaterialParams {
     colorBrightness?: number,  // 颜色亮度调整因子，默认1.0，大于1.0会提亮
 }
 
+export interface BuildMeshResult {
+    mesh: THREE.Mesh | null;
+    pointsOutsideMesh: number[]; // 不在 mesh 范围内的点索引
+}
+
 export const buildHumanPatchMeshFromHeightMap = ({
     heightMap,
     validMask,
@@ -99,22 +152,23 @@ export const buildHumanPatchMeshFromHeightMap = ({
     transformParams,
     skinOpacity,
     meshColor = new THREE.Color(0xDBC0A7),
-    metalness = 0.06,
-    roughness = 0.46,
-    transmission = 0.2,
-    thickness = 0.2,
-    ior = 1.42,
-    clearcoat = 1.0,
-    clearcoatRoughness = 0.5,
-    reflectivity = 0.5,
-    attenuationDistance = 1,
-    attenuationColor = new THREE.Color(0xffccaa),
-    envMapIntensity = 1.5,
-    sheen = 1.0,
-    sheenColor = new THREE.Color(0xfbe9d6),
-    sheenRoughness = 0.5,
+    // metalness = 0.06,
+    // roughness = 0.46,
+    // transmission = 0.2,
+    // thickness = 0.2,
+    // ior = 1.42,
+    // clearcoat = 1.0,
+    // clearcoatRoughness = 0.5,
+    // reflectivity = 0.5,
+    // attenuationDistance = 1,
+    // attenuationColor = new THREE.Color(0xffccaa),
+    // envMapIntensity = 1.5,
+    // sheen = 1.0,
+    // sheenColor = new THREE.Color(0xfbe9d6),
+    // sheenRoughness = 0.5,
     useVertexColors = false,
     colorBrightness = 1.3,  // 默认提亮50%
+    points, // 传入的点云（变换后的坐标）
 }: {
     heightMap: Float32Array,
     validMask: Uint8Array,
@@ -147,10 +201,11 @@ export const buildHumanPatchMeshFromHeightMap = ({
     sheenRoughness?: number,
     useVertexColors?: boolean,
     colorBrightness?: number,
-}): THREE.Mesh | null => {
-    const positions = [];
-    const colors = [];
-    const indices   = [];
+    points?: THREE.Vector3[], // 点云（变换后的坐标）
+}): BuildMeshResult => {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
     const vertIndex = new Int32Array(nx * ny);
     vertIndex.fill(-1);
 
@@ -257,7 +312,12 @@ export const buildHumanPatchMeshFromHeightMap = ({
         }
     }
 
-    if (!positions.length) return null;
+    if (!positions.length) {
+        return {
+            mesh: null,
+            pointsOutsideMesh: points ? Array.from({ length: points.length }, (_, i) => i) : []
+        };
+    }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
@@ -294,33 +354,156 @@ export const buildHumanPatchMeshFromHeightMap = ({
     });
 
     // 更加拟真的皮肤材质设置
-    const material = new THREE.MeshPhysicalMaterial({
-        color: meshColor, // 偏浅肤色
-        metalness,  // 低金属性，皮肤近似为非金属
-        roughness,  // 稍微有点粗糙模拟表皮
-        transmission, // 皮肤有一定透光感
-        thickness,    // 模拟皮肤厚度
-        ior,         // 人体皮肤折射率
-        clearcoat,    // 全清漆模拟皮肤油脂光泽
-        clearcoatRoughness, // 微小清漆粗糙度
-        reflectivity,  // 适度反射
-        attenuationDistance, // 控制皮肤"透射"的距离
-        attenuationColor,  // 透射偏暖橙
-        transparent: true,
-        opacity: skinOpacity,
-        envMapIntensity,
-        sheen,                 // 光泽:让表皮有光晕感
-        sheenColor, // 薄薄亮色
-        sheenRoughness,
-        side: THREE.DoubleSide,       // 反面渲染（如需双面可用 DoubleSide）
-        // vertexColors: true          // 启用顶点颜色
-    });
-    console.log(material, skinMaterial);
+    // const material = new THREE.MeshPhysicalMaterial({
+    //     color: meshColor, // 偏浅肤色
+    //     metalness,  // 低金属性，皮肤近似为非金属
+    //     roughness,  // 稍微有点粗糙模拟表皮
+    //     transmission, // 皮肤有一定透光感
+    //     thickness,    // 模拟皮肤厚度
+    //     ior,         // 人体皮肤折射率
+    //     clearcoat,    // 全清漆模拟皮肤油脂光泽
+    //     clearcoatRoughness, // 微小清漆粗糙度
+    //     reflectivity,  // 适度反射
+    //     attenuationDistance, // 控制皮肤"透射"的距离
+    //     attenuationColor,  // 透射偏暖橙
+    //     transparent: true,
+    //     opacity: skinOpacity,
+    //     envMapIntensity,
+    //     sheen,                 // 光泽:让表皮有光晕感
+    //     sheenColor, // 薄薄亮色
+    //     sheenRoughness,
+    //     side: THREE.DoubleSide,       // 反面渲染（如需双面可用 DoubleSide）
+    //     // vertexColors: true          // 启用顶点颜色
+    // });
+    // console.log(material, skinMaterial);
 
     const mesh = new THREE.Mesh(geometry, skinMaterial);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    return mesh;
+    
+    // 找出不在 mesh 范围内的点
+    const pointsOutsideMesh: number[] = []
+    if (points && points.length > 0) {
+        const widthX = xMax - xMin || 1.0;
+        const heightY = yMax - yMin || 1.0;
+        const xCenter = (xMin + xMax) / 2;
+        const yCenter = (yMin + yMax) / 2;
+        const idx = (ix: number, iy: number) => iy * nx + ix;
+        
+        // 计算 mesh 的 z 范围（从 heightMap 中）
+        let meshZMin = Infinity, meshZMax = -Infinity
+        for (let i = 0; i < heightMap.length; i++) {
+            if (validMask[i] && !Number.isNaN(heightMap[i])) {
+                const z = heightMap[i]
+                if (transformParams) {
+                    const zTransformed = z * transformParams.scaleFactor - transformParams.center.z
+                    if (zTransformed < meshZMin) meshZMin = zTransformed
+                    if (zTransformed > meshZMax) meshZMax = zTransformed
+                } else {
+                    if (z < meshZMin) meshZMin = z
+                    if (z > meshZMax) meshZMax = z
+                }
+            }
+        }
+        
+        // 统计 validMask 中有效点的数量
+        // let validMaskCount = 0
+        // for (let i = 0; i < validMask.length; i++) {
+        //     if (validMask[i]) validMaskCount++
+        // }
+        // console.log(`[buildHumanPatchMeshFromHeightMap] validMask 有效点数: ${validMaskCount}, 网格总数: ${nx * ny}`)
+        // console.log(`[buildHumanPatchMeshFromHeightMap] 网格范围: x[${xMin.toFixed(3)}, ${xMax.toFixed(3)}], y[${yMin.toFixed(3)}, ${yMax.toFixed(3)}], z[${meshZMin.toFixed(3)}, ${meshZMax.toFixed(3)}]`)
+        
+        // 如果有点云，检查哪些点不在 mesh 范围内
+        let sampleCount = 0
+        const sampleSize = Math.min(20, points.length) // 采样前20个点用于调试
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i]
+            
+            // 将点反变换回原始坐标（如果使用了 transformParams）
+            let xRaw: number, yRaw: number
+            if (transformParams) {
+                // 反变换：原始点 = (变换点 + center) / scaleFactor
+                // 因为变换是：newPoint = oldPoint * scaleFactor - center
+                // 所以反变换：oldPoint = (newPoint + center) / scaleFactor
+                const originalPoint = point.clone()
+                originalPoint.add(transformParams.center)
+                originalPoint.divideScalar(transformParams.scaleFactor)
+                xRaw = originalPoint.x
+                yRaw = originalPoint.y
+                // zRaw = originalPoint.z
+            } else {
+                // 如果没有变换，点已经是中心化后的坐标，需要加回中心
+                xRaw = point.x + xCenter
+                yRaw = point.y + yCenter
+                // zRaw = point.z
+            }
+            
+            // 采样前几个点打印调试信息
+            if (sampleCount < sampleSize) {
+                // const u = (xRaw - xMin) / widthX
+                // const v = (yRaw - yMin) / heightY
+                // const gx = Math.floor(u * (nx - 1))
+                // const gy = Math.floor(v * (ny - 1))
+                // const gridIndex = idx(gx, gy)
+                // const inRange = !(xRaw < xMin || xRaw > xMax || yRaw < yMin || yRaw > yMax)
+                // const inGrid = !(gx < 0 || gx >= nx || gy < 0 || gy >= ny)
+                // const inMask = inGrid && validMask[gridIndex] ? true : false
+                // const meshZ = inGrid && validMask[gridIndex] ? heightMap[gridIndex] : NaN
+                // const zDiff = !Number.isNaN(meshZ) ? Math.abs(point.z - (transformParams ? (meshZ * transformParams.scaleFactor - transformParams.center.z) : meshZ)) : Infinity
+                // console.log(`点 ${i}: 变换后(${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}), 反变换后(${xRaw.toFixed(3)}, ${yRaw.toFixed(3)}, ${zRaw.toFixed(3)}), 网格(${gx},${gy}), 范围内:${inRange}, 网格内:${inGrid}, 有效:${inMask}, z差:${zDiff.toFixed(3)}`)
+                sampleCount++
+            }
+            
+            // 检查点是否在 (xMin, xMax, yMin, yMax) 范围内
+            if (xRaw < xMin || xRaw > xMax || yRaw < yMin || yRaw > yMax) {
+                pointsOutsideMesh.push(i)
+                continue
+            }
+            
+            // 计算点对应的网格索引
+            // 注意：这里使用 (nx - 1) 和 (ny - 1) 因为网格索引是从 0 到 nx-1
+            const u = (xRaw - xMin) / widthX
+            const v = (yRaw - yMin) / heightY
+            const gx = Math.floor(u * (nx - 1))
+            const gy = Math.floor(v * (ny - 1))
+            
+            // 边界检查
+            if (gx < 0 || gx >= nx || gy < 0 || gy >= ny) {
+                pointsOutsideMesh.push(i)
+                continue
+            }
+            
+            // 检查对应的网格单元是否在 validMask 中
+            const gridIndex = idx(gx, gy)
+            if (!validMask[gridIndex]) {
+                pointsOutsideMesh.push(i)
+                continue
+            }
+            
+            // 额外检查：点的 z 坐标是否在 mesh 的 z 范围内（允许一定容差）
+            const meshZ = heightMap[gridIndex]
+            if (!Number.isNaN(meshZ)) {
+                const meshZTransformed = transformParams 
+                    ? (meshZ * transformParams.scaleFactor - transformParams.center.z)
+                    : meshZ
+                const zTolerance = Math.abs(meshZMax - meshZMin) * 0.1 // 容差为 z 范围的 10%
+                if (Math.abs(point.z - meshZTransformed) > zTolerance) {
+                    // z 坐标差异太大，认为不在 mesh 范围内
+                    pointsOutsideMesh.push(i)
+                    continue
+                }
+            }
+        }
+        
+        // console.log(`[buildHumanPatchMeshFromHeightMap] 总点数: ${points.length}, 不在mesh范围内的点数: ${pointsOutsideMesh.length}`)
+    }
+    
+    return {
+        mesh,
+        pointsOutsideMesh
+    }
 }
 
 interface Vec2 {
@@ -429,6 +612,7 @@ function extractBoundaryLoopFromMask(
     smoothResult: SmoothenResult;
     material?: THREE.Material;
     chaikinIterations?: number;
+    transformParams?: TransformParams;
   }
   
   /**
@@ -443,6 +627,7 @@ function extractBoundaryLoopFromMask(
       smoothResult,
       material,
       chaikinIterations = 2,
+      transformParams,
     } = params;
   
     const {
@@ -468,8 +653,9 @@ function extractBoundaryLoopFromMask(
       yMax
     );
   
+    console.log("[buildSmoothSilhouetteSkinMesh] rawLoop length:", rawLoop.length);
     if (rawLoop.length < 3) {
-      console.warn("[buildSmoothSilhouetteSkinMesh] boundary loop too small");
+      console.warn("[buildSmoothSilhouetteSkinMesh] boundary loop too small, rawLoop.length:", rawLoop.length);
       return null;
     }
   
@@ -484,7 +670,7 @@ function extractBoundaryLoopFromMask(
     cx /= loop.length;
     cy /= loop.length;
   
-    const cz = sampleHeightFromGrid(
+    const czRaw = sampleHeightFromGrid(
       heightMapFiltered,
       cx,
       cy,
@@ -500,11 +686,24 @@ function extractBoundaryLoopFromMask(
     const indices: number[] = [];
   
     // 顶点 0：中心
-    vertices.push(cx, cy, cz);
+    let cxFinal: number, cyFinal: number, czFinal: number;
+    if (transformParams) {
+      const centerPoint = new THREE.Vector3(cx, cy, czRaw);
+      centerPoint.multiplyScalar(transformParams.scaleFactor);
+      centerPoint.sub(transformParams.center);
+      cxFinal = centerPoint.x;
+      cyFinal = centerPoint.y;
+      czFinal = centerPoint.z;
+    } else {
+      cxFinal = cx;
+      cyFinal = cy;
+      czFinal = czRaw;
+    }
+    vertices.push(cxFinal, cyFinal, czFinal);
   
     // 顶点 1..n：轮廓点
     for (const p of loop) {
-      const z = sampleHeightFromGrid(
+      const zRaw = sampleHeightFromGrid(
         heightMapFiltered,
         p.x,
         p.y,
@@ -515,7 +714,20 @@ function extractBoundaryLoopFromMask(
         xMin,
         yMin
       );
-      vertices.push(p.x, p.y, z);
+      let xFinal: number, yFinal: number, zFinal: number;
+      if (transformParams) {
+        const point = new THREE.Vector3(p.x, p.y, zRaw);
+        point.multiplyScalar(transformParams.scaleFactor);
+        point.sub(transformParams.center);
+        xFinal = point.x;
+        yFinal = point.y;
+        zFinal = point.z;
+      } else {
+        xFinal = p.x;
+        yFinal = p.y;
+        zFinal = zRaw;
+      }
+      vertices.push(xFinal, yFinal, zFinal);
     }
   
     const centerIndex = 0;
@@ -526,6 +738,13 @@ function extractBoundaryLoopFromMask(
       indices.push(centerIndex, i1, i2);
     }
   
+    console.log("[buildSmoothSilhouetteSkinMesh] vertices count:", vertices.length / 3, "indices count:", indices.length);
+    
+    if (vertices.length === 0 || indices.length === 0) {
+      console.warn("[buildSmoothSilhouetteSkinMesh] no vertices or indices generated");
+      return null;
+    }
+
     const geom = new THREE.BufferGeometry();
     geom.setAttribute(
       "position",
@@ -533,7 +752,18 @@ function extractBoundaryLoopFromMask(
     );
     geom.setIndex(indices);
     geom.computeVertexNormals();
-  
+
+    // 计算边界框用于调试
+    geom.computeBoundingBox();
+    const bbox = geom.boundingBox;
+    if (bbox) {
+      console.log("[buildSmoothSilhouetteSkinMesh] bounding box:", {
+        min: bbox.min,
+        max: bbox.max,
+        size: bbox.max.clone().sub(bbox.min)
+      });
+    }
+
     const skinMaterial =
       material ??
       new THREE.MeshPhysicalMaterial({
@@ -548,9 +778,10 @@ function extractBoundaryLoopFromMask(
         clearcoatRoughness: 0.65,
         envMapIntensity: 0.75,
       });
-  
+
     const mesh = new THREE.Mesh(geom, skinMaterial);
     mesh.name = "SmoothSilhouetteSkin";
-  
+
+    console.log("[buildSmoothSilhouetteSkinMesh] mesh created successfully");
     return mesh;
 }

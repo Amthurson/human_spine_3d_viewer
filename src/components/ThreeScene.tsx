@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
-import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
+import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { processPointCloud } from '../utils/pointCloudUtils'
 import type { Point3D, TransformParams } from '../utils/pointCloudUtils'
 import PointCloud from './PointCloud'
@@ -12,7 +12,7 @@ import MarkersInfo from './UI/MarkersInfo'
 import Sidebar from './UI/Sidebar'
 import ColorImagePreview from './UI/ColorImagePreview'
 import OperationHint from './UI/OperationHint'
-import initWasm, { process_point_cloud } from '../assets/wasm/rgb_pointcloud_wasm.js'
+import initWasm, { process_point_cloud_no_norm } from '../assets/wasm_no_norm/rgb_pointcloud_wasm.js'
 // import CameraInfo from './UI/CameraInfo.js'
 // import CameraInfo from './UI/CameraInfo.js'
 
@@ -172,17 +172,15 @@ export default function ThreeScene() {
   const [humanPoints, setHumanPoints] = useState<Point3D[]>([])
   const [spinePoints, setSpinePoints] = useState<Point3D[]>([])
   const [transformParams, setTransformParams] = useState<TransformParams | null>(null)
-  const [opacity, setOpacity] = useState(0.9)
+  const [opacity, setOpacity] = useState(0.45)
   const [minOffset, setMinOffset] = useState(-0.91)
   const [models, setModels] = useState<THREE.Group[]>([])
   const [markers, setMarkers] = useState<Record<string, Marker>>(loadMarkersFromStorage)
   const [highlightedVertebra, setHighlightedVertebra] = useState<string | null>(null)
-  const [, setIsDragging] = useState(false)
-  const [hoveredModel, setHoveredModel] = useState<THREE.Group | null>(null)
   const [applyOffset, setApplyOffset] = useState(false) // 是否应用偏移量
   // const [showBoxHelpers, setShowBoxHelpers] = useState(false) // 是否显示模型边界框
   const [showMarkers, setShowMarkers] = useState(false) // 是否显示标记和连线
-  const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.69) // Y轴允许重合比例，默认20%
+  const [allowedYOverlapRatio, setAllowedYOverlapRatio] = useState(0.54) // Y轴允许重合比例，默认20%
   const [isOptimizing, setIsOptimizing] = useState(false) // 是否正在优化模型缩放
   const [colorImageUrl, setColorImageUrl] = useState<string | null>(null) // Color.png 图片 URL
   const [rawSpinePoints2D, setRawSpinePoints2D] = useState<Array<{ x: number; y: number }>>([]) // 原始的 point.json 2D 坐标
@@ -193,29 +191,27 @@ export default function ThreeScene() {
   const modelsRef = useRef<THREE.Group[]>([]) // 保存模型的引用，避免依赖项变化导致重复执行
   const applyOffsetRef = useRef(applyOffset) // 保存applyOffset的引用
   const hasDataRef = useRef(false) // 保存是否有数据的引用
+  const hoveredModelRef = useRef<THREE.Group | null>(null) // 保存当前悬停的模型引用
   const [colorData, setColorData] = useState<{ r: number, g: number, b: number }[]>([])
   // WASM 相关状态
   const [wasmInitialized, setWasmInitialized] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingError, setProcessingError] = useState<string | null>(null)
   const wasmInitializedRef = useRef(false)
+
+  // 点云类型
   const [pointType, setPointType] = useState<'sphere' | 'box'>('box')
   const [modelReloadKey, setModelReloadKey] = useState(0) // 用于触发模型重新加载
-  const [selectedLight, setSelectedLight] = useState<THREE.DirectionalLight | null>(null) // 选中的光源
-  const [showLightHelpers] = useState(false) // 是否显示光源辅助器
-  const selectedLightRef = useRef<THREE.DirectionalLight | null>(null)
-  const lightHelpersRef = useRef<THREE.DirectionalLightHelper[]>([])
-  const lightSpheresRef = useRef<THREE.Mesh[]>([]) // 光源位置球体
   const isDraggingLightRef = useRef(false) // 是否正在拖动光源
   const transformControlsRef = useRef<TransformControls | null>(null) // TransformControls引用
   const [skinOpacity, setSkinOpacity] = useState(1)
-  const [showPointCloud, setShowPointCloud] = useState(false)
+  const [showPointCloud, setShowPointCloud] = useState(true)
   const [showSkin, setShowSkin] = useState(true)
-  const [pointSize, setPointSize] = useState(0.038)
+  const [pointSize, setPointSize] = useState(0.705)
   const [showOriginalColor, setShowOriginalColor] = useState(true)
   
   // 皮肤材质参数
-  const [skinColor, setSkinColor] = useState('#efcdaf')
+  const [skinColor, setSkinColor] = useState('#efccae')
   const [skinMetalness, setSkinMetalness] = useState(0.00)
   const [skinRoughness, setSkinRoughness] = useState(1.00)
   const [skinTransmission, setSkinTransmission] = useState(0.11)
@@ -232,15 +228,12 @@ export default function ThreeScene() {
   const [skinSheenRoughness, setSkinSheenRoughness] = useState(0.55)
   const [skinDepthGapRatio, setSkinDepthGapRatio] = useState(0.47)
   const [useVertexColors, setUseVertexColors] = useState(true)
-  // 更新 ref 以保持最新值
+  const [isSmoothed, setIsSmoothed] = useState(true)
+  const [isSmoothedSkin, setIsSmoothedSkin] = useState(true)
+
   useEffect(() => {
     showMarkersRef.current = showMarkers
   }, [showMarkers])
-
-  // 更新 selectedLight ref
-  useEffect(() => {
-    selectedLightRef.current = selectedLight
-  }, [selectedLight])
 
   // 更新 applyOffset ref
   useEffect(() => {
@@ -306,7 +299,7 @@ export default function ThreeScene() {
       }
 
       // 调用 WASM
-      let result = process_point_cloud(pcBytes, spineText, colorBytes)
+      let result = process_point_cloud_no_norm(pcBytes, spineText, colorBytes)
 
       // 如果返回的是字符串，尝试解析
       if (typeof result === 'string') {
@@ -314,8 +307,17 @@ export default function ThreeScene() {
       }
 
       // 提取 spine 和 human_points
-      const spineData = result.spine || []
-      const humanPointsData = result.human_points || []
+      const spineData = result.spine.map(p=>({
+        x: p.x,
+        y: -p.y,
+        z: p.z,
+      })) || []
+      const humanPointsData = result.human_points.map(p=>({
+        x: p.x,
+        y: -p.y,
+        z: p.z,
+      })) || []
+      console.log('humanPointsData', humanPointsData.slice(0, 10))
       const rawColorData = result.color || result.human_points_colors || []
       
       // 转换颜色数据格式，支持多种格式：{r,g,b}[] 或 [r,g,b][] 或 {r:255, g:255, b:255}[]
@@ -372,7 +374,17 @@ export default function ThreeScene() {
       setColorData(colorData)
       // 处理点云并获取变换参数
       if (humanPointsArray.length > 0) {
-        const { transformParams: params } = processPointCloud(humanPointsArray)
+        const { transformParams: params, transformedPoints } = processPointCloud(humanPointsArray)
+        const box = new THREE.Box3();
+        transformedPoints.forEach(p => box.expandByPoint(p));
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        // const maxDim = Math.max(size.x, size.y, size.z);
+        // sceneRef.current?.camera.position.set(center.x, center.y, - center.z - maxDim * 1.5);
+        // sceneRef.current?.controls.target.copy(center);
+        // sceneRef.current?.controls.update();
         setTransformParams(params)
       }
 
@@ -469,12 +481,13 @@ export default function ThreeScene() {
 
     // 创建相机
     const camera = new THREE.PerspectiveCamera(
-      45,
+      30,
       mountElement.clientWidth / mountElement.clientHeight,
       0.01,
-      10000
+      10000000
     )
     // 设置初始相机位置
+    // camera.position.set(0, 0, 50);
     camera.position.set(0.61, 2.86, -7.40)
     // 设置初始相机旋转（角度转弧度）
     camera.rotation.set(
@@ -541,60 +554,48 @@ export default function ThreeScene() {
     rootGroup.add(markersGroup)
     markersGroupRef.current = markersGroup
 
-    // 监听控制器事件
-    let dragging = false
-    controls.addEventListener('start', () => {
-      dragging = true
-      setIsDragging(true)
-    })
-
-    controls.addEventListener('end', () => {
-      dragging = false
-      setIsDragging(false)
-    })
-
     // 添加坐标轴辅助线
-    // const axesHelper = new THREE.AxesHelper(1.5)
-    // rootGroup.add(axesHelper)
+    const axesHelper = new THREE.AxesHelper(1.5)
+    rootGroup.add(axesHelper)
 
     // 添加坐标轴标签
-    // const createAxisLabel = (text: string, position: [number, number, number], color: string) => {
-    //   const div = document.createElement('div')
-    //   div.textContent = text
-    //   div.style.color = color
-    //   div.style.fontSize = '16px'
-    //   div.style.fontWeight = 'bold'
-    //   div.style.fontFamily = 'Arial, sans-serif'
-    //   div.style.pointerEvents = 'none'
-    //   div.style.userSelect = 'none'
-    //   div.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)'
+    const createAxisLabel = (text: string, position: [number, number, number], color: string) => {
+      const div = document.createElement('div')
+      div.textContent = text
+      div.style.color = color
+      div.style.fontSize = '16px'
+      div.style.fontWeight = 'bold'
+      div.style.fontFamily = 'Arial, sans-serif'
+      div.style.pointerEvents = 'none'
+      div.style.userSelect = 'none'
+      div.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)'
 
-    //   const label = new CSS2DObject(div)
-    //   label.position.set(...position)
-    //   return label
-    // }
+      const label = new CSS2DObject(div)
+      label.position.set(...position)
+      return label
+    }
 
-    // const xLabel = createAxisLabel('X', [1.8, 0, 0], '#ff0000')
-    // rootGroup.add(xLabel)
-    // const yLabel = createAxisLabel('Y', [0, 1.8, 0], '#00ff00')
-    // rootGroup.add(yLabel)
-    // const zLabel = createAxisLabel('Z', [0, 0, 1.8], '#0000ff')
-    // rootGroup.add(zLabel)
+    const xLabel = createAxisLabel('X', [1.8, 0, 0], '#ff0000')
+    rootGroup.add(xLabel)
+    const yLabel = createAxisLabel('Y', [0, 1.8, 0], '#00ff00')
+    rootGroup.add(yLabel)
+    const zLabel = createAxisLabel('Z', [0, 0, 1.8], '#0000ff')
+    rootGroup.add(zLabel)
 
     // 添加光源（增强亮度）
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.3) // 从0.5增加到0.8
     rootGroup.add(ambientLight)
 
     const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1) // 从1.2增加到1.8
-    directionalLight1.position.set(5, 8, 5)
+    directionalLight1.position.set(-5, 8, -5)
     rootGroup.add(directionalLight1)
 
     const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.0) // 从0.6增加到1.0
-    directionalLight2.position.set(-5, 6, 3)
+    directionalLight2.position.set(5, 6, -3)
     rootGroup.add(directionalLight2)
 
     const directionalLight3 = new THREE.DirectionalLight(0xffffff, 1) // 从0.4增加到0.8
-    directionalLight3.position.set(0, 2, -8)
+    directionalLight3.position.set(0, 2, 8)
     rootGroup.add(directionalLight3)
 
     const directionalLight4 = new THREE.DirectionalLight(0xffffff, 1.0) // 从0.5增加到1.0
@@ -603,112 +604,14 @@ export default function ThreeScene() {
 
     // 创建两个侧向直射光源，用于显示z深度阴影轮廓
     const sideLight1 = new THREE.DirectionalLight(0xffffff, 1.2) // 左侧光源
-    sideLight1.position.set(-10, 2, 0) // 从左侧照射
+    sideLight1.position.set(10, 2, 0) // 从左侧照射
     sideLight1.castShadow = true
     rootGroup.add(sideLight1)
 
     const sideLight2 = new THREE.DirectionalLight(0xffffff, 1.2) // 右侧光源
-    sideLight2.position.set(10, 2, 0) // 从右侧照射
+    sideLight2.position.set(-10, 2, 0) // 从右侧照射
     sideLight2.castShadow = true
     rootGroup.add(sideLight2)
-
-    // 创建光源辅助器
-    const helper1 = new THREE.DirectionalLightHelper(sideLight1, 1, 0xffff00)
-    helper1.visible = showLightHelpers
-    rootGroup.add(helper1)
-    lightHelpersRef.current.push(helper1)
-
-    const helper2 = new THREE.DirectionalLightHelper(sideLight2, 1, 0xffff00)
-    helper2.visible = showLightHelpers
-    rootGroup.add(helper2)
-    lightHelpersRef.current.push(helper2)
-
-    // 创建光源位置球体（用于显示和拖动）
-    const createLightSphere = (light: THREE.DirectionalLight, color: number) => {
-      const geometry = new THREE.SphereGeometry(0.15, 16, 16)
-      const material = new THREE.MeshBasicMaterial({ 
-        color,
-        transparent: true,
-        opacity: 0.8
-      })
-      const sphere = new THREE.Mesh(geometry, material)
-      sphere.position.copy(light.position)
-      sphere.userData.light = light
-      sphere.userData.isLightSphere = true
-      sphere.visible = showLightHelpers
-      rootGroup.add(sphere)
-      return sphere
-    }
-
-    const lightSphere1 = createLightSphere(sideLight1, 0xffff00) // 黄色
-    const lightSphere2 = createLightSphere(sideLight2, 0x00ffff) // 青色
-    lightSpheresRef.current = [lightSphere1, lightSphere2]
-
-    // 创建TransformControls用于拖动光源
-    const transformControls = new TransformControls(camera, renderer.domElement)
-    transformControls.setMode('translate') // 设置为移动模式
-    transformControls.setSpace('world') // 使用世界坐标系
-    transformControls.showX = true
-    transformControls.showY = true
-    transformControls.showZ = true
-    transformControls.enabled = false // 初始禁用
-    
-    // TransformControls 在某些版本的 Three.js 中可以直接添加到场景
-    // 尝试添加到场景，如果失败则使用替代方案
-    // try {
-    //   // 检查 TransformControls 是否是 Object3D 的实例
-    //   if ('isObject3D' in transformControls && transformControls.isObject3D) {
-    //     scene.add(transformControls as unknown as THREE.Object3D)
-    //   } else {
-    //     // 如果不是 Object3D，尝试直接添加（某些版本可能支持）
-    //     // 使用类型断言绕过类型检查
-    //     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    //     const sceneAny = scene as any
-    //     if (typeof sceneAny.add === 'function') {
-    //       sceneAny.add(transformControls)
-    //     }
-    //   }
-    // } catch (error) {
-    //   console.warn('无法将 TransformControls 添加到场景，使用替代方案:', error)
-    //   // 如果添加失败，TransformControls 仍然可以工作，只是不会在场景中显示
-    //   // 我们需要手动在渲染循环中更新它
-    // }
-    transformControlsRef.current = transformControls
-
-    // 监听TransformControls的拖动事件
-    transformControls.addEventListener('dragging-changed', (event) => {
-      // 拖动时禁用OrbitControls
-      const isDragging = event.value as boolean
-      isDraggingLightRef.current = isDragging
-      // 只有在有数据时才允许拖拽，拖拽时禁用 OrbitControls
-      if (isDragging) {
-        controls.enabled = false
-      } else {
-        // 拖拽结束后，根据是否有数据恢复 controls.enabled
-        controls.enabled = hasDataRef.current
-      }
-    })
-
-    // 监听TransformControls的位置变化
-    transformControls.addEventListener('change', () => {
-      if (selectedLightRef.current) {
-        const light = selectedLightRef.current
-        // 更新光源球体位置
-        lightSpheresRef.current.forEach((sphere) => {
-          if (sphere.userData.light === light) {
-            sphere.position.copy(light.position)
-          }
-        })
-        // 更新光源辅助器
-        lightHelpersRef.current.forEach((helper) => {
-          if (helper.light === light) {
-            helper.update()
-          }
-        })
-      }
-    })
-
-
 
     // 键盘控制
     const keys: Record<string, boolean> = {}
@@ -803,8 +706,35 @@ export default function ThreeScene() {
     }
     window.addEventListener('resize', handleResize)
 
-    // 鼠标事件处理
-    let mouseDownPos: { x: number; y: number } | null = null
+    // 高亮模型
+    const highlightModel = (model: THREE.Group) => {
+      model.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          // 保存原始材质颜色（如果还没有保存）
+          if (!originalMaterialsRef.current.has(child)) {
+            const original = {
+              colors: materials.map((mat) => 
+                mat instanceof THREE.MeshStandardMaterial ? mat.color.clone() : new THREE.Color()
+              ),
+              emissives: materials.map((mat) => 
+                mat instanceof THREE.MeshStandardMaterial ? mat.emissive.clone() : new THREE.Color()
+              ),
+            }
+            originalMaterialsRef.current.set(child, original)
+          }
+          
+          // 高亮模型：增加emissive和改变颜色
+          materials.forEach((mat) => {
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              mat.emissive.setHex(0x33aaff) // 蓝色发光
+              mat.emissiveIntensity = 0.5
+            }
+          })
+        }
+      })
+    }
 
     const handleMouseMove = (event: MouseEvent) => {
       // 如果没有数据，不处理任何鼠标事件
@@ -814,166 +744,55 @@ export default function ThreeScene() {
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
       raycaster.setFromCamera(mouse, camera)
 
-      // TransformControls会自己处理拖动，这里不需要手动处理
+      // 检测鼠标悬停的脊柱模型
+      const objectsToCheck: THREE.Mesh[] = []
+      const meshToModelMap = new Map<THREE.Mesh, THREE.Group>()
+      const meshToVertebraNameMap = new Map<THREE.Mesh, string>()
 
-      // 检测鼠标悬停（只有在没有拖拽时才检测）
-      if (!dragging && mouseDownPos === null && !isDraggingLightRef.current) {
-        // 先检查是否悬停在光源球体上
-        const lightSpheres = lightSpheresRef.current.filter(s => s.visible)
-        const lightIntersects = raycaster.intersectObjects(lightSpheres, false)
-        
-        if (lightIntersects.length > 0) {
-          const sphere = lightIntersects[0].object as THREE.Mesh
-          const light = sphere.userData.light as THREE.DirectionalLight
-          canvas.style.cursor = 'pointer'
-          // 高亮选中的光源球体
-          if (selectedLightRef.current !== light) {
-            // 重置之前选中的球体
-            const prevLight = selectedLightRef.current
-            if (prevLight) {
-              lightSpheresRef.current.forEach((s) => {
-                if (s.userData.light === prevLight) {
-                  (s.material as THREE.MeshBasicMaterial).opacity = 0.8
-                  s.scale.set(1, 1, 1)
-                }
-              })
+      scene.traverse((object) => {
+        if (object.userData && object.userData.vertebraName) {
+          const vertebraName = object.userData.vertebraName
+          const model = object as THREE.Group
+          object.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              objectsToCheck.push(child)
+              meshToModelMap.set(child, model)
+              meshToVertebraNameMap.set(child, vertebraName)
             }
-            // 高亮当前球体
-            (sphere.material as THREE.MeshBasicMaterial).opacity = 1.0
-            sphere.scale.set(1.2, 1.2, 1.2)
-            setSelectedLight(light)
-            // 将TransformControls附加到选中的光源
-            if (transformControlsRef.current) {
-              transformControlsRef.current.attach(light)
-              transformControlsRef.current.enabled = true
-            }
-          }
-          return
-        } else {
-          // 检查是否点击了空白区域，取消选中
-          // 重置所有光源球体
-          lightSpheresRef.current.forEach((s) => {
-            (s.material as THREE.MeshBasicMaterial).opacity = 0.8
-            s.scale.set(1, 1, 1)
           })
-          if (selectedLightRef.current && !isDraggingLightRef.current) {
-            setSelectedLight(null)
-            // 隐藏TransformControls
-            if (transformControlsRef.current) {
-              transformControlsRef.current.detach()
-              transformControlsRef.current.enabled = false
-            }
-          }
-          canvas.style.cursor = 'grab'
         }
+      })
 
-        const objectsToCheck: THREE.Mesh[] = []
-        const meshToModelMap = new Map<THREE.Mesh, string>()
-
-        scene.traverse((object) => {
-          if (object.userData && object.userData.vertebraName) {
-            const vertebraName = object.userData.vertebraName
-            object.traverse((child) => {
-              if (child instanceof THREE.Mesh) {
-                objectsToCheck.push(child)
-                meshToModelMap.set(child, vertebraName)
-              }
-            })
-          }
-        })
-
-        const intersects = raycaster.intersectObjects(objectsToCheck, false)
-        let currentHoveredModel: THREE.Group | null = null
-        let currentHoveredName: string | null = null
-
-        if (intersects.length > 0) {
-          const mesh = intersects[0].object as THREE.Mesh
-          currentHoveredName = meshToModelMap.get(mesh) || null
-
-          if (currentHoveredName) {
-            scene.traverse((obj) => {
-              if (obj.userData && obj.userData.vertebraName === currentHoveredName) {
-                currentHoveredModel = obj as THREE.Group
-              }
-            })
-          }
-        }
-
-        if (currentHoveredModel !== hoveredModel) {
-          if (hoveredModel) {
-            restoreModelColor(hoveredModel)
-            setHighlightedVertebra(null)
-          }
-          if (currentHoveredModel) {
-            highlightModelColor(currentHoveredModel)
-            setHighlightedVertebra(currentHoveredName)
-          }
-          setHoveredModel(currentHoveredModel)
-        }
-      }
-    }
-
-    const handleMouseDown = (event: MouseEvent) => {
-      // 如果没有数据，不处理任何鼠标事件
-      if (!hasDataRef.current) return
+      const intersects = raycaster.intersectObjects(objectsToCheck, false)
       
-      if (event.button === 0) {
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
-        raycaster.setFromCamera(mouse, camera)
+      if (intersects.length > 0) {
+        const intersect = intersects[0]
+        const mesh = intersect.object as THREE.Mesh
+        const newHoveredModel = meshToModelMap.get(mesh)
+        const vertebraName = meshToVertebraNameMap.get(mesh)
 
-        // 检查是否点击了光源球体
-        const lightSpheres = lightSpheresRef.current.filter(s => s.visible)
-        const lightIntersects = raycaster.intersectObjects(lightSpheres, false)
-        
-        if (lightIntersects.length > 0) {
-          const sphere = lightIntersects[0].object as THREE.Mesh
-          const light = sphere.userData.light as THREE.DirectionalLight
-          setSelectedLight(light)
-          // 将TransformControls附加到选中的光源
-          if (transformControlsRef.current) {
-            transformControlsRef.current.attach(light)
-            transformControlsRef.current.enabled = true
+        if (newHoveredModel && vertebraName) {
+          // 如果悬停的模型与之前的不同，需要恢复之前的模型颜色
+          const currentHoveredModel = hoveredModelRef.current
+          if (currentHoveredModel && currentHoveredModel !== newHoveredModel) {
+            restoreModelColor(currentHoveredModel)
           }
-          return
-        }
-
-        // 检查是否点击了空白区域，取消选中
-        if (selectedLightRef.current && transformControlsRef.current) {
-          // 检查是否点击了空白区域，取消选中
-          // 如果点击了空白区域（没有点击到任何可交互对象），取消选中
-          const allObjects: THREE.Object3D[] = []
-          scene.traverse((obj) => {
-            if (obj instanceof THREE.Mesh || obj instanceof THREE.Line) {
-              // 排除光源球体
-              if (!obj.userData.isLightSphere) {
-                allObjects.push(obj)
-              }
-            }
-          })
-          const allIntersects = raycaster.intersectObjects(allObjects, false)
           
-          // 如果没有点击到任何对象，取消选中
-          if (allIntersects.length === 0) {
-            setSelectedLight(null)
-            transformControlsRef.current.detach()
-            transformControlsRef.current.enabled = false
+          // 如果这是新的悬停模型，高亮它
+          if (currentHoveredModel !== newHoveredModel) {
+            highlightModel(newHoveredModel)
+            hoveredModelRef.current = newHoveredModel
+            setHighlightedVertebra(vertebraName)
           }
         }
-
-        canvas.style.cursor = 'grabbing'
-        mouseDownPos = { x: event.clientX, y: event.clientY }
-      }
-    }
-
-    const handleMouseUp = (event: MouseEvent) => {
-      // 如果没有数据，不处理任何鼠标事件
-      if (!hasDataRef.current) return
-      
-      if (event.button === 0) {
-        canvas.style.cursor = 'grab'
-        // 单击不触发标记，只重置状态
-        mouseDownPos = null
+      } else {
+        // 没有悬停在任何模型上，恢复之前悬停的模型颜色
+        const currentHoveredModel = hoveredModelRef.current
+        if (currentHoveredModel) {
+          restoreModelColor(currentHoveredModel)
+          hoveredModelRef.current = null
+          setHighlightedVertebra(null)
+        }
       }
     }
 
@@ -1018,53 +837,16 @@ export default function ThreeScene() {
     }
 
     canvas.addEventListener('mousemove', handleMouseMove)
-    canvas.addEventListener('mousedown', handleMouseDown)
-    canvas.addEventListener('mouseup', handleMouseUp)
     canvas.addEventListener('dblclick', handleDoubleClick)
 
     canvas.addEventListener('mouseleave', () => {
-      if (hoveredModel) {
-        restoreModelColor(hoveredModel)
+      const currentHoveredModel = hoveredModelRef.current
+      if (currentHoveredModel) {
+        restoreModelColor(currentHoveredModel)
+        hoveredModelRef.current = null
         setHighlightedVertebra(null)
-        setHoveredModel(null)
       }
     })
-
-    // 高亮模型颜色
-    const highlightModelColor = (model: THREE.Group) => {
-      model.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          // 保存原始材质（只在第一次高亮时保存）
-          if (!originalMaterialsRef.current.has(child)) {
-            const materials = Array.isArray(child.material) ? child.material : [child.material]
-            const original = {
-              colors: materials.map((mat) => (mat as THREE.MeshStandardMaterial).color.clone()),
-              emissives: materials.map((mat) =>
-                (mat as THREE.MeshStandardMaterial).emissive
-                  ? (mat as THREE.MeshStandardMaterial).emissive.clone()
-                  : new THREE.Color(0x000000)
-              ),
-            }
-            originalMaterialsRef.current.set(child, original)
-          }
-
-          // 可选：设置为蓝色高亮（HTML demo中被注释的功能）
-          // if (Array.isArray(child.material)) {
-          //   child.material.forEach((mat) => {
-          //     ;(mat as THREE.MeshStandardMaterial).color.set(0x0000ff) // 蓝色
-          //     if ((mat as THREE.MeshStandardMaterial).emissive) {
-          //       ;(mat as THREE.MeshStandardMaterial).emissive.set(0x000033) // 微弱的蓝色自发光
-          //     }
-          //   })
-          // } else {
-          //   ;(child.material as THREE.MeshStandardMaterial).color.set(0x0000ff) // 蓝色
-          //   if ((child.material as THREE.MeshStandardMaterial).emissive) {
-          //     ;(child.material as THREE.MeshStandardMaterial).emissive.set(0x000033) // 微弱的蓝色自发光
-          //   }
-          // }
-        }
-      })
-    }
 
     // 恢复模型颜色
     const restoreModelColor = (model: THREE.Group) => {
@@ -1265,8 +1047,6 @@ export default function ThreeScene() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
       canvas.removeEventListener('mousemove', handleMouseMove)
-      canvas.removeEventListener('mousedown', handleMouseDown)
-      canvas.removeEventListener('mouseup', handleMouseUp)
       canvas.removeEventListener('dblclick', handleDoubleClick)
       
       // 清理TransformControls
@@ -1276,29 +1056,10 @@ export default function ThreeScene() {
         transformControlsRef.current = null
       }
       
-      // 清理光源辅助器
-      lightHelpersRef.current.forEach((helper) => {
-        rootGroup.remove(helper)
-        helper.dispose()
-      })
-      lightHelpersRef.current = []
-      
-      // 清理光源球体
-      lightSpheresRef.current.forEach((sphere) => {
-        rootGroup.remove(sphere)
-        sphere.geometry.dispose()
-        if (sphere.material instanceof THREE.Material) {
-          sphere.material.dispose()
-        }
-      })
-      lightSpheresRef.current = []
-      
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.animationId)
         const canvas = sceneRef.current.renderer.domElement
         canvas.removeEventListener('contextmenu', handleContextMenu)
-        canvas.removeEventListener('mousedown', handleMouseDown)
-        canvas.removeEventListener('mouseup', handleMouseUp)
         canvas.removeEventListener('dblclick', handleDoubleClick)
         sceneRef.current.controls.dispose()
         sceneRef.current.renderer.dispose()
@@ -1356,7 +1117,7 @@ export default function ThreeScene() {
               setIsOptimizing(false) // 优化完成
             })
           }
-        }, 200) // 延迟确保位置调整完成
+        }, 10) // 延迟确保位置调整完成
 
       // 从缓存恢复标记位置（使用当前的 markers 状态）
       // 注意：这里需要延迟执行，确保 markers 状态已经更新
@@ -1471,16 +1232,6 @@ export default function ThreeScene() {
     })
   }, [showMarkers])
 
-  // 控制光源辅助器的显示/隐藏
-  useEffect(() => {
-    lightHelpersRef.current.forEach((helper) => {
-      helper.visible = showLightHelpers
-    })
-    lightSpheresRef.current.forEach((sphere) => {
-      sphere.visible = showLightHelpers
-    })
-  }, [showLightHelpers])
-
   // 根据是否有数据来控制3D世界的交互
   useEffect(() => {
     if (!sceneRef.current) return
@@ -1496,21 +1247,6 @@ export default function ThreeScene() {
       controls.enabled = hasData
     }
   }, [humanPoints.length, spinePoints.length])
-
-  // 当选中光源变化时，更新TransformControls
-  useEffect(() => {
-    if (transformControlsRef.current) {
-      // 只有在有数据时才允许使用 TransformControls
-      const hasData = humanPoints.length > 0 || spinePoints.length > 0
-      if (selectedLight && hasData) {
-        transformControlsRef.current.attach(selectedLight)
-        transformControlsRef.current.enabled = true
-      } else {
-        transformControlsRef.current.detach()
-        transformControlsRef.current.enabled = false
-      }
-    }
-  }, [selectedLight, humanPoints.length, spinePoints.length])
 
   const scene = sceneRef.current?.scene
 
@@ -1620,6 +1356,10 @@ export default function ThreeScene() {
         onSkinDepthGapRatioChange={setSkinDepthGapRatio}
         useVertexColors={useVertexColors}
         onUseVertexColorsChange={setUseVertexColors}
+        isSmoothed={isSmoothed}
+        isSmoothedSkin={isSmoothedSkin}
+        onIsSmoothedChange={setIsSmoothed}
+        onIsSmoothedSkinChange={setIsSmoothedSkin}
       />
       {/* Color.png 预览窗口 */}
       <ColorImagePreview imageUrl={colorImageUrl} spinePoints2D={rawSpinePoints2D} />
@@ -1643,7 +1383,6 @@ export default function ThreeScene() {
             opacity={opacity} 
             skinOpacity={skinOpacity} 
             scene={sceneRef.current.rootGroup} 
-            minOffset={minOffset} 
             pointType={pointType} 
             humanColors={colorData} 
             showPointCloud={showPointCloud} 
@@ -1651,6 +1390,8 @@ export default function ThreeScene() {
             pointSize={pointSize} 
             showOriginalColor={showOriginalColor}
             skinParams={skinParams}
+            isSmoothed={isSmoothed}
+            isSmoothedSkin={isSmoothedSkin}
           />
           <SpinePoints points={spinePoints} transformParams={transformParams} scene={sceneRef.current.rootGroup} />
           <VertebraModels

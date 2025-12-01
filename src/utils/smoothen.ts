@@ -1,5 +1,14 @@
 import type { Point3D } from "./pointCloudUtils";
 
+/**
+ * 将原始点云转换为高度图
+ * @param params 参数
+ * @param params.rawPoints 原始点云
+ * @param params.humanColors 人体颜色
+ * @param params.nx 网格分辨率
+ * @param params.ny 网格分辨率
+ * @returns 高度图
+ */
 export const getHeightMapByRawPoints = ({rawPoints, humanColors, nx, ny}: {rawPoints: Point3D[], humanColors?: { r: number, g: number, b: number }[], nx: number, ny: number}): { heightMap: Float32Array, validMask: Uint8Array, colorMapR: Float32Array, colorMapG: Float32Array, colorMapB: Float32Array, xMin: number, xMax: number, yMin: number, yMax: number, widthX: number, heightY: number, N: number, zMax: number, zMin: number } => {
     // ======== 3. 将 rawPoints 转为 Float32Array，并计算 XY 范围 ========
     const N = rawPoints.length;
@@ -138,13 +147,13 @@ function bilateralFilterHeight(heightIn: Float32Array, nx: number, ny: number, r
     const out = new Float32Array(nx * ny);
     const twoSigmaSpace2 = 2 * sigmaSpace * sigmaSpace;
     const twoSigmaDepth2 = 2 * sigmaDepth * sigmaDepth;
-    const heightOut = heightIn;
+    const heightOut = heightIn.slice();
 
     function idx(ix: number, iy: number) {
         return iy * nx + ix;
     }
 
-    let src = heightOut;
+    let src: Float32Array = heightOut;
     let dst: Float32Array = out;
 
     for (let it = 0; it < iterations; it++) {
@@ -243,16 +252,27 @@ function sampleHeightFromGrid(heightMapFiltered: Float32Array, x: number, y: num
  */
 export const smoothen = ({
     rawPoints, 
-    humanColors
+    humanColors,
+    nx = 279, // 网格分辨率，可视点数多时可改为 256
+    ny = 279, // 网格分辨率，可视点数多时可改为 256
+    radius = 3, // 邻域半径（3~5）  
+    sigmaSpace = 3.5, // 空间距离权重
+    iterations = 2, // 迭代次数，1~2 一般够
 }: {
     rawPoints: Point3D[], 
     humanColors?: { 
         r: number, 
         g: number, 
         b: number 
-    }[]
+    }[],
+    nx?: number,
+    ny?: number,
+    radius?: number,
+    sigmaSpace?: number,
+    iterations?: number
 }): { 
     smoothed: Point3D[], 
+    heightMap: Float32Array, 
     heightMapFiltered: Float32Array, 
     validMask: Uint8Array, 
     colorMapR: Float32Array, 
@@ -267,11 +287,11 @@ export const smoothen = ({
     zMax: number, 
     zMin: number 
 } => {
-    const nx = 279; // 网格分辨率，可视点数多时可改为 256
-    const ny = 279;
-    const radius = 3;               // 邻域半径（3~5）
-    const sigmaSpace = 3.5;         // 空间距离权重
-    const iterations = 2;           // 迭代次数，1~2 一般够
+    // const nx = 128; // 网格分辨率，可视点数多时可改为 256
+    // const ny = 128;
+    // const radius = 1;               // 邻域半径（3~5）
+    // const sigmaSpace = 0;         // 空间距离权重
+    // const iterations = 1;           // 迭代次数，1~2 一般够
 
     // ======== 4. 构建 2.5D 高度图 height(x, y) ========
     const {heightMap, validMask, colorMapR, colorMapG, colorMapB, widthX, heightY, xMin, xMax, yMin, yMax, N, zMax, zMin} = getHeightMapByRawPoints({rawPoints, humanColors, nx, ny});
@@ -296,5 +316,5 @@ export const smoothen = ({
       smoothed.push({ x, y, z: zSmooth });
     }
 
-    return { smoothed, heightMapFiltered, validMask, colorMapR, colorMapG, colorMapB,nx, ny, xMin, xMax, yMin, yMax, zMax, zMin };
+    return { smoothed,heightMap, heightMapFiltered, validMask, colorMapR, colorMapG, colorMapB,nx, ny, xMin, xMax, yMin, yMax, zMax, zMin };
 }

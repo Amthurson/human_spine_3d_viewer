@@ -18,9 +18,8 @@ export type TransformParams = {
 }
 
 /**
- * 处理点云数据，计算变换参数
+ * 处理点云数据，计算变换参数（只应用居中，不应用缩放）
  * @param points 原始点云数据
- * @param targetSize 目标尺寸（默认10）
  * @returns 变换参数和变换后的点
  */
 export function processPointCloud(
@@ -37,7 +36,6 @@ export function processPointCloud(
   // 计算边界框
   const box = new THREE.Box3()
   threePoints.forEach(p => box.expandByPoint(p))
-
   const size = new THREE.Vector3()
   box.getSize(size)
   const maxSide = Math.max(size.x, size.y, size.z)
@@ -45,19 +43,23 @@ export function processPointCloud(
 
   const center = new THREE.Vector3()
   box.getCenter(center)
+  center.multiplyScalar(scaleFactor)
 
-  // 应用缩放和居中变换
+  // 只应用居中变换，不应用缩放
   const transformedPoints = threePoints.map(p => {
     const point = p.clone()
     point.multiplyScalar(scaleFactor)
-    point.sub(center.clone().multiplyScalar(scaleFactor))
+    point.sub(center)
     return point
   })
+
+  // console.log('transformedPoints-distance', transformedPoints[0].distanceTo(transformedPoints[1]))
+  // console.log('threePoints-distance', threePoints[0].distanceTo(threePoints[1]))
 
   return {
     transformParams: {
       scaleFactor,
-      center: center.clone().multiplyScalar(scaleFactor),
+      center: center.clone(),
     },
     transformedPoints,
   }

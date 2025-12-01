@@ -10,7 +10,7 @@
   font-size: 14px;
   z-index: 1000;
   transition: transform 0.3s ease;
-  overflow-y: auto;
+  overflow-y: hidden;
   overflow-x: hidden;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.5);
 }
@@ -23,14 +23,13 @@
   /* 按钮的默认样式清除 */
   all: unset;
   position: absolute;
+  top: 0;
   right: 0;
   outline: none;
-  top: 20px;
   width: 30px;
-  height: 20px;
+  height: 44px;
   background: rgba(0, 0, 0, 0.9);
   border: none;
-  border-radius: 0 8px 8px 0;
   color: #fff;
   font-size: 16px;
   cursor: pointer;
@@ -49,7 +48,9 @@
 }
 
 .sidebar-content {
-  padding: 20px;
+  padding: 0 20px 20px 20px;
+  overflow-y: auto;
+  height: 100%;
 }
 
 .sidebar-title {
@@ -58,7 +59,11 @@
   font-weight: 600;
   color: #fff;
   border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-  padding-bottom: 10px;
+  padding: 10px 0;
+  position: sticky;
+  top: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 1001;
 }
 
 .sidebar-section {
@@ -241,20 +246,20 @@
 }
 
 /* 滚动条样式 */
-.sidebar::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 6px;
 }
 
-.sidebar::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
   border-radius: 3px;
 }
 
-.sidebar::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
 
