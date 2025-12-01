@@ -238,6 +238,8 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
     const vertebraGroup = new THREE.Group()
     // 添加一个标识
     vertebraGroup.userData.isVertebraGroup = true
+    // 设置最高优先级，确保脊柱模型最后渲染，显示在最上层
+    vertebraGroup.renderOrder = 4
     vertebraGroupRef.current = vertebraGroup
     const models: THREE.Group[] = []
     let loadedCount = 0
@@ -305,12 +307,21 @@ const VertebraModels = forwardRef<VertebraModelsRef, VertebraModelsProps>(({
             if (child instanceof THREE.Mesh && child.material) {
               const materials = Array.isArray(child.material) ? child.material : [child.material]
               materials.forEach((mat) => {
-                if (mat instanceof THREE.MeshStandardMaterial) {
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
                   // 增加金属度，降低粗糙度，让反光更明显
-                  mat.metalness = Math.max(mat.metalness || 0, 0.2)
-                  mat.roughness = Math.min(mat.roughness || 0.8, 0.5)
+                  if (mat.metalness !== undefined) {
+                    mat.metalness = Math.max(mat.metalness || 0, 0.2)
+                  }
+                  if (mat.roughness !== undefined) {
+                    mat.roughness = Math.min(mat.roughness || 0.8, 0.5)
+                  }
                   // 增加环境光反射
-                  mat.envMapIntensity = 1.5
+                  if (mat.envMapIntensity !== undefined) {
+                    mat.envMapIntensity = 1.5
+                  }
+                  // 确保脊柱模型写入深度，优先显示
+                  mat.depthWrite = true
+                  mat.depthTest = true
                 }
               })
             }

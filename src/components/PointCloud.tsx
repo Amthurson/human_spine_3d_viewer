@@ -1014,7 +1014,8 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         if (humanPatchMesh) {
           humanPatchMesh.receiveShadow = true;
           humanPatchMesh.castShadow = true;
-          humanPatchMesh.renderOrder = 2;
+          // 设置renderOrder > point的renderOrder，确保skin在point之后渲染，point不会遮挡skin
+          humanPatchMesh.renderOrder = 3;
           scene.add(humanPatchMesh)
           humanPatchMeshRef.current = humanPatchMesh
         }
@@ -1100,21 +1101,27 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
       let sphereGeometry: THREE.BufferGeometry
       if (pointType === 'sphere' && showPointCloud) {
         // 球体材质（使用 instanceColor）
-        // MeshStandardMaterial 会自动使用 InstancedMesh 的 instanceColor
-        const sphereMaterial = new THREE.MeshStandardMaterial({
+        // 使用MeshPhysicalMaterial支持transmission透射效果
+        const sphereMaterial = new THREE.MeshPhysicalMaterial({
           color: 0xffffff, // 基础颜色为白色，会被 instanceColor 覆盖
-          metalness: 0.5,
-          roughness: 0.5,
+          metalness: 0.3,
+          roughness: 0.4,
           transparent: true,
-          opacity,
+          opacity: opacity * 0.7, // 降低opacity让skin层光能透过来
+          // 添加透射效果，让背后的skin层光能透过来
+          transmission: 0.3,
+          thickness: 0.1,
           // 添加轻微自发光，确保颜色可见
           emissive: 0x000000,
           emissiveIntensity: 0.1,
+          depthWrite: false, // 不写入深度，避免影响后续渲染
+          depthTest: true, // 启用深度测试，确保点云不会遮挡脊柱（renderOrder=4）
+          // 点云renderOrder=2 < 脊柱renderOrder=4，点云先渲染，脊柱后渲染时会覆盖点云
         });
         // 球体几何体
         sphereGeometry = new THREE.BoxGeometry(pointSize, pointSize, pointSize);
         // 给几何体每个顶点都复制上colorsSmooth颜色数组（所有顶点都用该点的颜色）
-        // BoxGeometry有8个顶点，但我们希望每个实例的“box”颜色由其点的颜色决定
+        // BoxGeometry有8个顶点，但我们希望每个实例的"box"颜色由其点的颜色决定
         // 所以仅设置 instanceColor，在 InstancedMesh 渲染时设置每个实例的颜色
         // 而不是在geometry顶点属性上设置
         // 但 THREE.InstancedMesh 只支持 instanceColor
@@ -1154,6 +1161,8 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         if (instancedMesh.instanceColor) {
           instancedMesh.instanceColor.needsUpdate = true
         }
+        // 设置renderOrder < skin的renderOrder(3)，确保点云在skin之前渲染，point不会遮挡skin
+        instancedMesh.renderOrder = 2;
         scene.add(instancedMesh)
         meshRef.current = instancedMesh
       } else if (showPointCloud) {
@@ -1169,27 +1178,38 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
         
         const material = new THREE.ShaderMaterial({
           transparent: true,
-          depthWrite: false,
+          depthWrite: false, // 透明物体通常不写入深度，避免影响后续渲染
+          depthTest: true, // 启用深度测试，确保点云不会遮挡脊柱（renderOrder=4）
+          // 点云renderOrder=2 < 脊柱renderOrder=4，点云先渲染，脊柱后渲染时会覆盖点云
           vertexColors: true,
+          // 使用NormalBlending，通过调整alpha来实现透射效果
+          // 当后面有skin层时，较低的alpha会让skin层的颜色透过来
+          // 当后面没有物体（背景）时，点云本身的颜色会显示
+          // 这样可以实现point和skin的叠加渲染
+          blending: THREE.NormalBlending,
           uniforms: {
             uSize: { value: pointSize },   // 像素尺寸基准
             uOpacity: { value: opacity },  // 用 uniform 控制透明度
+            uTransmissionFactor: { value: 0.6 }, // 透射因子，控制透射强度（0-1）
           },
           vertexShader: `
             varying vec3 vColor;
+            varying float vDepth;
             uniform float uSize;
             void main() {
               vColor = color;
               vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-              float dist = -mvPosition.z;
+              vDepth = -mvPosition.z;
               gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = clamp(uSize * 120.0 / dist, 2.0, 12.0);
+              gl_PointSize = clamp(uSize * 120.0 / vDepth, 2.0, 12.0);
             }
           `,
           fragmentShader: `
             precision highp float;
             varying vec3 vColor;
+            varying float vDepth;
             uniform float uOpacity;
+            uniform float uTransmissionFactor;
 
             void main() {
               // [-1,1] 的点精灵坐标
@@ -1203,18 +1223,31 @@ export default function PointCloud({ points, opacity, skinOpacity, scene, pointT
               // 高斯柔一下
               alpha *= exp(-r2 * 2.0);
 
-              // 叠加不透明度
-              alpha *= uOpacity;
+              // 基础alpha值
+              float baseAlpha = alpha * uOpacity;
+              
+              if(baseAlpha < 0.01) discard;
 
-              if(alpha < 0.01) discard;
-
-              // 直接使用原始颜色，无光照处理
-              gl_FragColor = vec4(vColor, alpha);
+              // 根据透射因子调整alpha
+              // transmissionFactor越高，alpha越低，透射效果越明显
+              // 当transmissionFactor=0时，alpha=baseAlpha（完全不透射）
+              // 当transmissionFactor=1时，alpha=baseAlpha*0.3（最大透射）
+              // 这样，当后面有skin层时，skin层的颜色会透过来
+              // 当后面没有物体（背景）时，点云本身的颜色会显示，但会稍微透明
+              float transmissionAlpha = baseAlpha * mix(1.0, 0.3, uTransmissionFactor);
+              
+              // 输出颜色和alpha
+              // NormalBlending会让后面的颜色透过来（当alpha < 1时）
+              // 当后面有skin层时，skin层的颜色会透过来
+              // 当后面是背景色时，点云本身的颜色会显示
+              gl_FragColor = vec4(vColor, transmissionAlpha);
             }
           `,
         });
   
         const pointsSmoothObj = new THREE.Points(geomSmooth, material);
+        // 设置renderOrder < skin的renderOrder(3)，确保点云在skin之前渲染，point不会遮挡skin
+        pointsSmoothObj.renderOrder = 2;
         scene.add(pointsSmoothObj);
         meshRef.current = pointsSmoothObj;
       }

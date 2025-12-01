@@ -24,6 +24,8 @@ export default function SpinePoints({ points, transformParams, scene }: SpinePoi
       emissive: 0x440000, // 从0x330000增加到0x440000
       emissiveIntensity: 0.4, // 从0.3增加到0.4
       envMapIntensity: 1.5, // 增加环境光反射
+      depthWrite: true, // 写入深度，确保脊柱优先显示
+      depthTest: true, // 启用深度测试，确保正确的深度关系
     })
 
     // 创建较大的球体几何体
@@ -31,6 +33,8 @@ export default function SpinePoints({ points, transformParams, scene }: SpinePoi
 
     // 创建脊柱点组
     const spineGroup = new THREE.Group()
+    // 设置最高优先级，确保脊柱最后渲染，显示在最上层
+    spineGroup.renderOrder = 4
 
     // 为每个脊柱点创建球体
     transformedPoints.forEach((point, index) => {
@@ -46,10 +50,14 @@ export default function SpinePoints({ points, transformParams, scene }: SpinePoi
     const lineMaterial = new THREE.LineBasicMaterial({
       color: 0xff6600,
       linewidth: 2,
+      depthWrite: true, // 写入深度，确保脊柱连接线优先显示
+      depthTest: true, // 启用深度测试，确保正确的深度关系
     })
 
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(transformedPoints)
     const line = new THREE.Line(lineGeometry, lineMaterial)
+    // 设置最高优先级，确保脊柱连接线最后渲染，显示在最上层
+    line.renderOrder = 4
     scene.add(line)
 
     return () => {

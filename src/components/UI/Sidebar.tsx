@@ -120,36 +120,36 @@ export default function Sidebar({
   onUseVertexColorsChange,
   skinColor,
   onSkinColorChange,
-  // skinMetalness,
-  // onSkinMetalnessChange,
-  // skinRoughness,
-  // onSkinRoughnessChange,
-  // skinTransmission,
-  // onSkinTransmissionChange,
-  // skinThickness,
-  // onSkinThicknessChange,
-  // skinIor,
-  // onSkinIorChange,
-  // skinClearcoat,
-  // onSkinClearcoatChange,
-  // skinClearcoatRoughness,
-  // onSkinClearcoatRoughnessChange,
-  // skinReflectivity,
-  // onSkinReflectivityChange,
-  // skinAttenuationDistance,
-  // onSkinAttenuationDistanceChange,
-  // skinAttenuationColor,
-  // onSkinAttenuationColorChange,
-  // skinEnvMapIntensity,
-  // onSkinEnvMapIntensityChange,
-  // skinSheen,
-  // onSkinSheenChange,
-  // skinSheenColor,
-  // onSkinSheenColorChange,
-  // skinSheenRoughness,
-  // onSkinSheenRoughnessChange,
-  // skinDepthGapRatio,
-  // onSkinDepthGapRatioChange,
+  skinMetalness,
+  onSkinMetalnessChange,
+  skinRoughness,
+  onSkinRoughnessChange,
+  skinTransmission,
+  onSkinTransmissionChange,
+  skinThickness,
+  onSkinThicknessChange,
+  skinIor,
+  onSkinIorChange,
+  skinClearcoat,
+  onSkinClearcoatChange,
+  skinClearcoatRoughness,
+  onSkinClearcoatRoughnessChange,
+  skinReflectivity,
+  onSkinReflectivityChange,
+  skinAttenuationDistance,
+  onSkinAttenuationDistanceChange,
+  skinAttenuationColor,
+  onSkinAttenuationColorChange,
+  skinEnvMapIntensity,
+  onSkinEnvMapIntensityChange,
+  skinSheen,
+  onSkinSheenChange,
+  skinSheenColor,
+  onSkinSheenColorChange,
+  skinSheenRoughness,
+  onSkinSheenRoughnessChange,
+  skinDepthGapRatio,
+  onSkinDepthGapRatioChange,
   pointType,
   onPointTypeChange,
   isSmoothed,
@@ -424,7 +424,7 @@ export default function Sidebar({
                 style={{ width: '100%', height: '30px' }}
               />
               
-              {/* <label htmlFor="skin-metalness-slider">
+              <label htmlFor="skin-metalness-slider">
                 金属度: {skinMetalness.toFixed(2)}
               </label>
               <input
@@ -529,7 +529,7 @@ export default function Sidebar({
                 id="skin-reflectivity-slider"
                 type="range"
                 min="0"
-                max="1"
+                max="10"
                 value={skinReflectivity}
                 step="0.01"
                 onChange={(e) => onSkinReflectivityChange(parseFloat(e.target.value))}
@@ -624,7 +624,7 @@ export default function Sidebar({
                 step="1"
                 onChange={(e) => onSkinDepthGapRatioChange(parseInt(e.target.value) / 100)}
                 disabled={humanPoints === 0 || isOptimizing}
-              /> */}
+              />
             </div>
           </section>
 

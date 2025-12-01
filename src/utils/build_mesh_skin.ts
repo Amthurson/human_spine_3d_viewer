@@ -364,6 +364,8 @@ export const buildHumanPatchMeshFromHeightMap = ({
         transparent: true,
         vertexColors: useVertexColors,      // 启用顶点颜色
         opacity: skinOpacity,
+        depthWrite: true, // 写入深度，确保skin优先显示
+        depthTest: true, // 启用深度测试，确保正确的深度关系
     });
 
     // 更加拟真的皮肤材质设置
